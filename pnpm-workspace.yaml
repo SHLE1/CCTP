@@ -1,0 +1,6 @@
+allowBuilds:
+  bufferutil: true
+  utf-8-validate: true
+onlyBuiltDependencies:
+  - bufferutil
+  - utf-8-validate

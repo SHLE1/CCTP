@@ -1,0 +1,30 @@
+{
+  "name": "relay-cctp",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@circle-fin/adapter-solana": "^1.6.3",
+    "@circle-fin/adapter-viem-v2": "^1.14.0",
+    "@circle-fin/bridge-kit": "^1.12.1",
+    "@solana/wallet-adapter-base": "^0.9.27",
+    "@solana/wallet-adapter-react": "^0.15.39",
+    "@solana/wallet-adapter-react-ui": "^0.9.39",
+    "@solana/web3.js": "^1.98.4",
+    "@vitejs/plugin-react": "latest",
+    "lucide-react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "typescript": "latest",
+    "viem": "^2.55.4",
+    "vite": "latest"
+  },
+  "devDependencies": {
+    "vite-plugin-node-polyfills": "^0.28.0"
+  }
+}
