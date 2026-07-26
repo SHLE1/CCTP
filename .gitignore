@@ -2,5 +2,13 @@ node_modules
 dist
 .DS_Store
 *.local
+.env
+.env.*
+!.env.example
 
 .firecrawl
+.tmp
+.tmp/**
+**/*keypair*.json
+**/*-wallets.json
+**/bridge-test-*.json

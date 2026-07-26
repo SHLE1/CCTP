@@ -3,9 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#f4f5f8" />
-    <meta name="description" content="Native USDC transfers between Solana and EVM chains via Circle CCTP." />
-    <title>Relay · Bridge USDC</title>
+    <meta name="theme-color" content="#f8f9ff" />
+    <meta name="description" content="Relay — native USDC transfers across chains via Circle CCTP." />
+    <title>Relay · USDC</title>
+    <link rel="preconnect" href="https://api.fontshare.com" crossorigin />
+    <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&display=swap" rel="stylesheet" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <script>
       (function () {
         try {
@@ -15,7 +20,7 @@
             : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
           document.documentElement.dataset.theme = theme
           var meta = document.querySelector('meta[name="theme-color"]')
-          if (meta) meta.setAttribute('content', theme === 'dark' ? '#111114' : '#f4f5f8')
+          if (meta) meta.setAttribute('content', theme === 'dark' ? '#0d0200' : '#f8f9ff')
         } catch (_) {
           document.documentElement.dataset.theme = 'light'
         }

@@ -18,33 +18,71 @@ import {
   X,
 } from 'lucide-react'
 import {
+  attachEvmWalletListeners,
   connectSourceWallet,
   estimateTransfer,
   executeTransfer,
+  fetchUsdcBalance,
   friendlyError,
   getSolanaRpcEndpoint,
+  isRetryableBridgeResult,
+  loadPersistedTransfer,
+  parseUsdcToMicro,
   persistTransfer,
-  quoteFees,
+  quoteFeeBreakdown,
   retryTransfer,
+  sanitizeAmountInput,
+  subtractUsdcAmounts,
+  supportsFastTransfer,
+  usesPublicSolanaRpc,
+  validateAmount,
   validateRecipient,
 } from './cctp'
 import '@solana/wallet-adapter-react-ui/styles.css'
 import './styles.css'
 
-// Icons: Trust Wallet assets (chain logos) + DefiLlama (Sonic / Unichain) + Circle USDC
+// Chain icons: Trust Wallet / DefiLlama; USDC: Circle asset via Trust Wallet
+// supportsFast is resolved at runtime from Bridge Kit chain defs (CCTP v2 fastConfirmations).
 const CHAIN_META = {
-  ethereum: { family: 'evm', icon: '/icons/ethereum.png', color: '#627EEA', eta: '14–19 min', supportsFast: true },
-  base: { family: 'evm', icon: '/icons/base.png', color: '#0052FF', eta: '4–7 min', supportsFast: true },
-  arbitrum: { family: 'evm', icon: '/icons/arbitrum.png', color: '#28A0F0', eta: '4–7 min', supportsFast: true },
-  optimism: { family: 'evm', icon: '/icons/optimism.png', color: '#FF0420', eta: '4–7 min', supportsFast: true },
-  avalanche: { family: 'evm', icon: '/icons/avalanche.png', color: '#E84142', eta: '4–7 min', supportsFast: false },
-  polygon: { family: 'evm', icon: '/icons/polygon.png', color: '#8247E5', eta: '8–12 min', supportsFast: false },
-  unichain: { family: 'evm', icon: '/icons/unichain.png', color: '#FF2D8D', eta: '4–7 min', supportsFast: true },
-  sonic: { family: 'evm', icon: '/icons/sonic.png', color: '#2563EB', eta: '4–7 min', supportsFast: false },
-  solana: { family: 'solana', icon: '/icons/solana.png', color: '#9945FF', eta: '8–12 sec', supportsFast: true },
+  ethereum: { family: 'evm', icon: '/icons/ethereum.png', color: '#627EEA', eta: '14–19 min' },
+  base: { family: 'evm', icon: '/icons/base.png', color: '#0052FF', eta: '4–7 min' },
+  arbitrum: { family: 'evm', icon: '/icons/arbitrum.png', color: '#28A0F0', eta: '4–7 min' },
+  optimism: { family: 'evm', icon: '/icons/optimism.png', color: '#FF0420', eta: '4–7 min' },
+  avalanche: { family: 'evm', icon: '/icons/avalanche.png', color: '#E84142', eta: '4–7 min' },
+  polygon: { family: 'evm', icon: '/icons/polygon.png', color: '#8247E5', eta: '8–12 min' },
+  unichain: { family: 'evm', icon: '/icons/unichain.png', color: '#FF2D8D', eta: '4–7 min' },
+  sonic: { family: 'evm', icon: '/icons/sonic.png', color: '#2563EB', eta: '4–7 min' },
+  solana: { family: 'solana', icon: '/icons/solana.png', color: '#9945FF', eta: '8–12 sec' },
 }
 
 const USDC_ICON = '/icons/usdc.png'
+
+const FAQ_ITEMS = [
+  {
+    q: 'What is CCTP?',
+    a: 'Circle Cross-Chain Transfer Protocol (CCTP) lets you move native USDC between supported blockchains by burning on the source chain and minting on the destination. No wrapped tokens or liquidity pools.',
+  },
+  {
+    q: 'How does CCTP work?',
+    a: 'USDC is burned on the source chain, Circle attests the burn, then native USDC is minted on the destination. This interface uses Circle Bridge Kit with Orbit for the full burn–attest–mint flow.',
+  },
+  {
+    q: 'What is the difference between Fast Transfer and Standard Transfer?',
+    a: 'Fast Transfer uses Circle’s fast finality path for shorter wait times and may include a CCTP fee. Standard Transfer follows the normal attestation path with no CCTP fee, but can take longer.',
+  },
+  {
+    q: 'Which blockchains are supported?',
+    a: 'This app supports the CCTP V2 networks available in Bridge Kit for the selected environment (Mainnet or Testnet), including major EVM chains and Solana.',
+  },
+  {
+    q: 'Are there any fees?',
+    a: 'This interface does not charge extra fees. You still pay gas on the source (and sometimes destination) chain, and Fast Transfer may include a CCTP fee shown before you sign.',
+  },
+  {
+    q: 'Is CCTP secure?',
+    a: 'CCTP is designed by Circle with a burn-and-mint model so funds are not parked in third-party bridge pools. Always verify network, amount, and recipient before signing.',
+  },
+]
 
 const CHAIN_NAMES = {
   mainnet: {
@@ -76,6 +114,7 @@ const makeChains = (environment) => Object.entries(CHAIN_NAMES[environment]).map
   id,
   name,
   ...CHAIN_META[id],
+  supportsFast: supportsFastTransfer(environment, id),
 }))
 
 const shortAddress = (value) => value ? `${value.slice(0, 5)}…${value.slice(-4)}` : ''
@@ -128,7 +167,7 @@ function ChainSelect({ chains, label, value, otherValue, onChange }) {
       <button className="chain-trigger" onClick={() => setOpen(true)} aria-label={`Choose ${label.toLowerCase()} chain`}>
         <ChainMark chain={selected} />
         <span className="chain-name">{selected.name}</span>
-        <ChevronRight size={16} strokeWidth={2} />
+        <ChevronRight className="chev" size={16} strokeWidth={2} />
       </button>
       {open && (
         <div className="modal-layer" role="dialog" aria-modal="true">
@@ -249,7 +288,19 @@ function WalletModal({ chain, environment, onClose, onConnected }) {
 
 const PHASE_INDEX = { ready: 0, approve: 0, burn: 1, attest: 2, mint: 3, success: 4 }
 
-function ProgressModal({ environment, source, destination, amount, phase, error, result, onClose, onStart, onRetry }) {
+function ProgressModal({
+  environment,
+  source,
+  destination,
+  amount,
+  phase,
+  error,
+  result,
+  canRetry,
+  onClose,
+  onStart,
+  onRetry,
+}) {
   const busy = ['approve', 'burn', 'attest', 'mint'].includes(phase)
   const phaseIndex = PHASE_INDEX[phase] ?? 0
   const steps = [
@@ -259,6 +310,29 @@ function ProgressModal({ environment, source, destination, amount, phase, error,
     { title: 'Mint', detail: `Native USDC on ${destination.name}`, icon: Check },
   ]
   const transactionSteps = (result?.steps || []).filter((item) => item.txHash || item.explorerUrl)
+
+  useEffect(() => {
+    if (!busy) return undefined
+    const onBeforeUnload = (event) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [busy])
+
+  const primaryAction = phase === 'success'
+    ? onClose
+    : phase === 'error'
+      ? (canRetry ? onRetry : onClose)
+      : onStart
+  const primaryLabel = phase === 'success'
+    ? 'Done'
+    : phase === 'error'
+      ? (canRetry ? 'Retry from last step' : 'Close')
+      : busy
+        ? 'Keep this open…'
+        : `Start ${ENVIRONMENT_LABELS[environment]} transfer`
 
   return (
     <div className="modal-layer" role="dialog" aria-modal="true">
@@ -302,15 +376,18 @@ function ProgressModal({ environment, source, destination, amount, phase, error,
             <Info size={15} />
             <span>
               {environment === 'mainnet'
-                ? <><strong>Mainnet.</strong> Real USDC will be burned. Check network, address, and amount.</>
-                : <><strong>Testnet.</strong> Test USDC will be burned and reminted via Orbit.</>}
+                ? <><strong>Mainnet.</strong> Real USDC will be burned. Check network, address, and amount. Keep this tab open until mint completes.</>
+                : <><strong>Testnet.</strong> Test USDC will be burned and reminted via Orbit. Keep this tab open until mint completes.</>}
             </span>
           </div>
         )}
+        {busy && (
+          <p className="progress-hint">Do not close this tab while attestation or mint is running. Progress is saved so you can resume if something fails.</p>
+        )}
         {error && <div className="error-message"><Info size={15} /><span>{error}</span></div>}
-        <button className="primary-button" onClick={phase === 'success' ? onClose : phase === 'error' ? onRetry : onStart} disabled={busy}>
+        <button className="primary-button" onClick={primaryAction} disabled={busy}>
           {busy && <LoaderCircle className="spin" size={16} />}
-          {phase === 'success' ? 'Done' : phase === 'error' ? 'Retry' : busy ? 'Keep this open…' : `Start ${ENVIRONMENT_LABELS[environment]} transfer`}
+          {primaryLabel}
         </button>
       </div>
     </div>
@@ -326,12 +403,15 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
   const [recipient, setRecipient] = useState('')
   const [quote, setQuote] = useState({ status: 'idle', data: null, error: '' })
   const [walletModal, setWalletModal] = useState(false)
-  const [transfer, setTransfer] = useState({ open: false, phase: 'ready', error: '', result: null })
+  const [transfer, setTransfer] = useState({ open: false, phase: 'ready', error: '', result: null, canRetry: false })
+  const [balance, setBalance] = useState({ status: 'idle', value: null, error: '' })
   const source = findChain(chains, sourceId)
   const destination = findChain(chains, destinationId)
-  const amountNumber = Number(amount) || 0
-  const fee = quoteFees(quote.data)
-  const receive = Math.max(amountNumber - fee, 0)
+  const amountError = validateAmount(amount)
+  const amountNumber = amountError ? 0 : (Number(amount) || 0)
+  const feeBreakdown = quoteFeeBreakdown(quote.data)
+  const receive = quote.data && !amountError ? subtractUsdcAmounts(amount, feeBreakdown.total) : null
+  const publicSolanaRpc = usesPublicSolanaRpc(environment)
 
   useEffect(() => {
     setQuote({ status: 'idle', data: null, error: '' })
@@ -340,6 +420,46 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
   useEffect(() => {
     if (!source.supportsFast && speed === 'fast') setSpeed('standard')
   }, [source, speed])
+
+  useEffect(() => {
+    if (!wallet?.address) {
+      setBalance({ status: 'idle', value: null, error: '' })
+      return undefined
+    }
+    let cancelled = false
+    setBalance({ status: 'loading', value: null, error: '' })
+    fetchUsdcBalance(environment, sourceId, wallet.address)
+      .then((value) => {
+        if (!cancelled) setBalance({ status: 'ready', value, error: '' })
+      })
+      .catch((error) => {
+        if (!cancelled) setBalance({ status: 'error', value: null, error: friendlyError(error) })
+      })
+    return () => { cancelled = true }
+  }, [environment, sourceId, wallet?.address])
+
+  useEffect(() => {
+    if (!wallet?.provider || wallet.family !== 'evm') return undefined
+    return attachEvmWalletListeners(wallet.provider, {
+      onAccountsChanged: (accounts) => {
+        if (!accounts?.length) {
+          setWallet(null)
+          setQuote({ status: 'idle', data: null, error: '' })
+          return
+        }
+        const next = accounts[0]
+        if (next?.toLowerCase() !== wallet.address?.toLowerCase()) {
+          // Adapter was created for the previous account — force a clean reconnect.
+          setWallet(null)
+          setQuote({ status: 'idle', data: null, error: '' })
+        }
+      },
+      onChainChanged: () => {
+        setWallet(null)
+        setQuote({ status: 'idle', data: null, error: '' })
+      },
+    })
+  }, [wallet])
 
   function swap() {
     setSourceId(destinationId)
@@ -359,12 +479,20 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
     setWallet(null)
     setRecipient('')
     setQuote({ status: 'idle', data: null, error: '' })
-    setTransfer({ open: false, phase: 'ready', error: '', result: null })
+    setTransfer({ open: false, phase: 'ready', error: '', result: null, canRetry: false })
     localStorage.setItem('relay:environment', value)
     onEnvironmentChange(value)
   }
 
   const recipientError = validateRecipient(environment, destinationId, recipient)
+  let balanceTooLow = false
+  if (wallet && balance.status === 'ready' && balance.value != null && !amountError && amount) {
+    try {
+      balanceTooLow = parseUsdcToMicro(amount) > parseUsdcToMicro(balance.value)
+    } catch {
+      balanceTooLow = false
+    }
+  }
 
   const bridgeInput = () => ({
     environment,
@@ -403,7 +531,7 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
   async function startTransfer(isRetry = false) {
     setTransfer((current) => ({ ...current, phase: 'approve', error: '' }))
     try {
-      const result = isRetry && transfer.result
+      const result = isRetry && transfer.result && isRetryableBridgeResult(transfer.result)
         ? await retryTransfer(transfer.result, wallet.adapter, handleBridgeEvent)
         : await executeTransfer(bridgeInput(), handleBridgeEvent)
       persistTransfer(result, environment)
@@ -412,11 +540,24 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
       setTransfer((current) => ({
         ...current,
         result,
+        canRetry: failed && isRetryableBridgeResult(result),
         phase: failed ? 'error' : 'success',
-        error: failed ? (failedStep?.errorMessage || 'Transfer incomplete. You can retry from the last step.') : '',
+        error: failed
+          ? (failedStep?.errorMessage || 'Transfer incomplete. You can retry from the last step.')
+          : '',
       }))
+      if (wallet?.address) {
+        fetchUsdcBalance(environment, sourceId, wallet.address)
+          .then((value) => setBalance({ status: 'ready', value, error: '' }))
+          .catch(() => {})
+      }
     } catch (error) {
-      setTransfer((current) => ({ ...current, phase: 'error', error: friendlyError(error) }))
+      setTransfer((current) => ({
+        ...current,
+        phase: 'error',
+        error: friendlyError(error),
+        canRetry: isRetryableBridgeResult(current.result),
+      }))
     }
   }
 
@@ -426,10 +567,50 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
     setQuote({ status: 'idle', data: null, error: '' })
   }
 
+  function resumeLastTransfer() {
+    const saved = loadPersistedTransfer(environment)
+    if (!saved) {
+      window.alert('No saved transfer found in this browser. After a partial transfer you can retry from here.')
+      return
+    }
+    const state = saved.result?.state || saved.summary?.state
+    const steps = saved.result?.steps || saved.summary?.steps || []
+    if (state === 'success') {
+      setTransfer({
+        open: true,
+        phase: 'success',
+        error: '',
+        result: { ...saved.result, steps },
+        canRetry: false,
+      })
+      return
+    }
+    if (saved.retryable) {
+      setTransfer({
+        open: true,
+        phase: 'error',
+        error: 'Incomplete transfer restored. Connect the same source wallet, then retry from the last step.',
+        result: saved.result,
+        canRetry: true,
+      })
+      return
+    }
+    setTransfer({
+      open: true,
+      phase: 'error',
+      error: saved.legacy
+        ? 'This browser only has a summary of the last transfer (not enough data to auto-retry). Use the explorer links below, or start a new transfer.'
+        : 'Saved transfer cannot be auto-retried. Inspect explorer links or start a new transfer.',
+      result: { steps, state, amount: saved.summary?.amount || saved.result?.amount },
+      canRetry: false,
+    })
+  }
+
   function primaryAction() {
     if (!wallet) return setWalletModal(true)
+    if (amountError || recipientError || balanceTooLow) return
     if (!quote.data) return fetchQuote()
-    setTransfer({ open: true, phase: 'ready', error: '', result: null })
+    setTransfer({ open: true, phase: 'ready', error: '', result: null, canRetry: false })
   }
 
   const eta = useMemo(
@@ -438,8 +619,20 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
   )
 
   const feeLabel = quote.data
-    ? (fee ? `${fee.toFixed(4)} USDC` : '0 USDC')
+    ? (feeBreakdown.total !== '0' ? `${feeBreakdown.total} USDC` : '0 USDC')
     : '—'
+
+  const balanceLabel = !wallet
+    ? '—'
+    : balance.status === 'loading'
+      ? '…'
+      : balance.status === 'ready' && balance.value != null
+        ? balance.value
+        : '—'
+
+  const formBlocked = Boolean(
+    wallet && (amountError || recipientError || balanceTooLow || quote.status === 'loading'),
+  )
 
   return (
     <div className="bridge-card" id="bridge">
@@ -453,24 +646,38 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
             </svg>
           </span>
           <div>
-            <h1>Start Bridging</h1>
-            <p className="card-sub">Move native USDC with Circle CCTP. No wrapped tokens.</p>
+            <h1>Transfer USDC</h1>
+            <p className="card-sub">Native USDC across chains via Circle CCTP.</p>
           </div>
         </div>
-        <div className="env-pills">
-          {Object.entries(ENVIRONMENT_LABELS).map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              className={`env-pill ${environment === key ? `active ${key}` : ''}`}
-              onClick={() => changeEnvironment(key)}
-              aria-pressed={environment === key}
-            >
-              {label}
-            </button>
-          ))}
+        <div className="card-actions">
+          <button type="button" className="ghost-btn" onClick={resumeLastTransfer}>
+            Resume transfer
+          </button>
+          <div className="env-pills">
+            {Object.entries(ENVIRONMENT_LABELS).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                className={`env-pill ${environment === key ? `active ${key}` : ''}`}
+                onClick={() => changeEnvironment(key)}
+                aria-pressed={environment === key}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
+
+      {environment === 'mainnet' && publicSolanaRpc && (
+        <div className="rpc-banner" role="status">
+          <Info size={14} />
+          <span>
+            Mainnet is using a public Solana RPC. Set <code>VITE_SOLANA_MAINNET_RPC</code> for production reliability.
+          </span>
+        </div>
+      )}
 
       <div className="chain-grid">
         <ChainSelect chains={chains} label="Source Chain" value={sourceId} otherValue={destinationId} onChange={setSource} />
@@ -490,14 +697,27 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
           <div className="amount-input-wrap">
             <input
               value={amount}
-              onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ''))}
+              onChange={(e) => setAmount(sanitizeAmountInput(e.target.value))}
               inputMode="decimal"
               placeholder="0.0"
               aria-label="USDC amount"
             />
-            <span className="balance-hint">Balance: —</span>
+            <span className="balance-hint">
+              Balance: {balanceLabel}
+              {wallet && balance.status === 'ready' && balance.value != null && (
+                <button
+                  type="button"
+                  className="max-amount"
+                  onClick={() => setAmount(sanitizeAmountInput(balance.value))}
+                >
+                  Max
+                </button>
+              )}
+            </span>
           </div>
         </div>
+        {amount && amountError && <small className="field-error">{amountError}</small>}
+        {balanceTooLow && <small className="field-error">Amount exceeds USDC balance</small>}
       </div>
 
       <div className="recipient-panel">
@@ -520,10 +740,16 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
       <div className="meta-row">
         <div className="info-pills">
           <span className="info-pill">Fee: {feeLabel}</span>
+          {quote.data && feeBreakdown.forwarder !== '0' && (
+            <span className="info-pill soft">Orbit: {feeBreakdown.forwarder}</span>
+          )}
+          {quote.data && feeBreakdown.protocol !== '0' && (
+            <span className="info-pill soft">CCTP: {feeBreakdown.protocol}</span>
+          )}
           <span className="info-pill">ETA: {eta}</span>
           <span className="info-pill">CCTP v2</span>
-          {quote.data && amountNumber > 0 && (
-            <span className="info-pill soft">Receive: {receive.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span>
+          {receive != null && (
+            <span className="info-pill soft">Receive: {receive}</span>
           )}
         </div>
         <label className={`fast-toggle ${!source.supportsFast ? 'disabled' : ''}`}>
@@ -552,20 +778,22 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
       <button
         className="primary-button"
         onClick={primaryAction}
-        disabled={Boolean(wallet && (amountNumber <= 0 || recipientError || quote.status === 'loading'))}
+        disabled={formBlocked}
       >
         {quote.status === 'loading' && <LoaderCircle className="spin" size={16} />}
         {!wallet
           ? 'Connect Wallet'
-          : amountNumber <= 0
-            ? 'Enter amount'
+          : amountError
+            ? (amount ? 'Invalid amount' : 'Enter amount')
             : recipientError
               ? 'Invalid recipient'
-              : quote.status === 'loading'
-                ? 'Quoting…'
-                : quote.data
-                  ? 'Review transfer'
-                  : 'Get quote'}
+              : balanceTooLow
+                ? 'Insufficient USDC'
+                : quote.status === 'loading'
+                  ? 'Quoting…'
+                  : quote.data
+                    ? 'Review transfer'
+                    : 'Get quote'}
       </button>
 
       {walletModal && (
@@ -581,10 +809,11 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
           environment={environment}
           source={source}
           destination={destination}
-          amount={amount}
+          amount={amount || transfer.result?.amount || '0'}
           phase={transfer.phase}
           error={transfer.error}
           result={transfer.result}
+          canRetry={transfer.canRetry && Boolean(wallet)}
           onClose={() => setTransfer((current) => ({ ...current, open: false }))}
           onStart={() => startTransfer(false)}
           onRetry={() => startTransfer(true)}
@@ -608,7 +837,7 @@ function resolveInitialTheme() {
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme
   const meta = document.querySelector('meta[name="theme-color"]')
-  if (meta) meta.setAttribute('content', theme === 'dark' ? '#111114' : '#f4f5f8')
+  if (meta) meta.setAttribute('content', theme === 'dark' ? '#0d0200' : '#f8f9ff')
   try {
     localStorage.setItem('relay:theme', theme)
   } catch { /* ignore */ }
@@ -628,33 +857,66 @@ function App({ environment, setEnvironment }) {
 
   return (
     <div className="app">
-      <div className="bg-grid" aria-hidden="true" />
-      <div className="bg-chevrons" aria-hidden="true">
-        <div className="chev left" />
-        <div className="chev right" />
+      <div className="bg-layer" aria-hidden="true">
+        <div className="bg-grid" />
       </div>
 
-      <button
-        type="button"
-        className="theme-toggle"
-        onClick={toggleTheme}
-        aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-        title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
-      >
-        {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-      </button>
+      <header className="topbar">
+        <a className="brand" href="#">
+          <span className="brand-mark" aria-hidden="true" />
+          Relay
+        </a>
+        <div className="topbar-right">
+          <a
+            className="topbar-link"
+            href="https://developers.circle.com/cctp"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Docs <ExternalLink size={12} />
+          </a>
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={toggleTheme}
+            aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+          >
+            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
+        </div>
+      </header>
 
       <main>
-        <p className="credit">Native USDC · Circle CCTP</p>
         <BridgeCard environment={environment} onEnvironmentChange={setEnvironment} chains={chains} />
-        <p className="footnote">No extra interface fees. Gas and CCTP fees may still apply.</p>
+        <p className="footnote">No interface fee. Gas and CCTP network fees still apply.</p>
+
+        <section className="faq" aria-label="Frequently asked questions">
+          <h2>FAQ</h2>
+          {FAQ_ITEMS.map((item) => (
+            <details className="faq-item" key={item.q}>
+              <summary>{item.q}</summary>
+              <p>{item.a}</p>
+            </details>
+          ))}
+        </section>
       </main>
 
-      <footer>
-        <a href="https://developers.circle.com/stablecoins/cctp-getting-started" target="_blank" rel="noreferrer">
-          Docs <ExternalLink size={11} />
-        </a>
-        <span>{chains.length} chains · not affiliated with Circle</span>
+      <footer className="site-footer">
+        <div className="footer-links">
+          <a href="https://developers.circle.com/cctp" target="_blank" rel="noreferrer">
+            Circle CCTP <ExternalLink size={11} />
+          </a>
+          <a href="https://developers.circle.com/cctp/cctp-supported-blockchains" target="_blank" rel="noreferrer">
+            Supported chains <ExternalLink size={11} />
+          </a>
+          <a href="https://github.com/SHLE1/CCTP" target="_blank" rel="noreferrer">
+            GitHub <ExternalLink size={11} />
+          </a>
+        </div>
+        <p className="footer-note">
+          Relay · {chains.length} chains · Independent UI, not affiliated with Circle.
+        </p>
       </footer>
     </div>
   )

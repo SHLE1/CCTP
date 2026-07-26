@@ -9,33 +9,52 @@ pnpm install
 pnpm dev
 ```
 
-Build the production bundle with `pnpm build`.
+Build the production bundle with `pnpm build`. Run pure unit tests with `pnpm test`.
 
 ## Included
 
 - Mainnet/Testnet environment switching with isolated wallet and quote state
 - Solana and EVM route selection, including Sonic
 - Wallet Standard auto-discovery for Solana wallets such as Backpack, Phantom and Solflare
-- Injected EVM wallet support for MetaMask, Rabby and Coinbase Wallet
-- Live Bridge Kit fee/gas preflight
+- Injected EVM wallet support for MetaMask, Rabby and Coinbase Wallet (account/chain change disconnect)
+- Live Bridge Kit fee/gas preflight with protocol vs Orbit fee breakdown
+- USDC balance preflight and 6-decimal amount validation
 - Real CCTP V2 Testnet burn → attest → forwarded mint execution
-- Fast and Standard transfer modes
-- Transaction explorer links and in-session retry for incomplete transfers
-- A locally persisted, serializable summary of the latest transfer
+- Fast and Standard transfer modes (driven by Bridge Kit `fastConfirmations`)
+- Full `BridgeResult` persistence for in-browser resume + `kit.retry` (forwarder-safe)
+- Transaction explorer links and beforeunload protection while a transfer is in flight
 
 ## Networks
 
 The environment selector maps every UI route to the corresponding Circle Bridge Kit mainnet or testnet chain definition. Switching environments disconnects the active wallet and clears the recipient, quote, and unsubmitted transfer state.
 
-For Solana, set optional production-quality RPC endpoints:
+For Solana, set dedicated RPC endpoints before mainnet use:
 
 ```bash
+cp .env.example .env
+# edit:
 VITE_SOLANA_MAINNET_RPC=https://your-solana-mainnet-rpc.example
 VITE_SOLANA_DEVNET_RPC=https://your-solana-devnet-rpc.example
 ```
 
 Never place private keys or RPC secrets in `VITE_*` variables. Browser-visible variables are public.
 
+Local integration harness files under `.tmp/` (wallets, keypairs) are gitignored. Do not commit them.
+
+## Transfer recovery
+
+After each bridge attempt the app stores a **versioned full BridgeResult** in `localStorage` (`relay:last-transfer:<env>`). Incomplete transfers can be resumed with **Resume transfer** when:
+
+1. The same browser profile still has the snapshot
+2. The source wallet is reconnected
+3. The snapshot includes provider + chain + step data (v2 format)
+
+Legacy summary-only snapshots remain inspectable (explorer links) but are not auto-retryable.
+
+Forwarder retries call `kit.retry(result, { from: sourceAdapter, to: undefined })` per Bridge Kit docs.
+
 ## Production warning
 
-Mainnet mode can move **real USDC** and spend real gas. This interface is not yet production-ready. Before relying on it as a public fallback service, add durable transaction storage, RPC failover, direct CCTP manual claiming, analytics/monitoring, compliance controls, end-to-end tests, and an independent smart-contract/frontend security review.
+Mainnet mode can move **real USDC** and spend real gas. Before relying on this as a public fallback service, add durable off-device transaction storage, multi-RPC failover, EIP-6963 multi-wallet UX, analytics/monitoring, compliance controls, broader end-to-end tests, and an independent smart-contract/frontend security review.
+
+For a first mainnet smoke test: use a dedicated RPC, start with a tiny amount (for example 0.1–1 USDC), keep the tab open through mint, and verify both explorer links and destination balance.

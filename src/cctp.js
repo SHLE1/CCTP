@@ -23,6 +23,27 @@ import { createViemAdapterFromProvider } from '@circle-fin/adapter-viem-v2'
 import { createSolanaAdapterFromProvider } from '@circle-fin/adapter-solana'
 import { Connection, PublicKey } from '@solana/web3.js'
 import { isAddress } from 'viem'
+import {
+  TRANSFER_STORAGE_VERSION,
+  formatUsdcFromMicro,
+  isRetryableBridgeResult,
+  serializeBridgeResult,
+} from './cctp-utils.js'
+
+export {
+  TRANSFER_STORAGE_VERSION,
+  USDC_DECIMALS,
+  addUsdcAmounts,
+  formatUsdcFromMicro,
+  isRetryableBridgeResult,
+  parseUsdcToMicro,
+  quoteFeeBreakdown,
+  quoteFees,
+  sanitizeAmountInput,
+  serializeBridgeResult,
+  subtractUsdcAmounts,
+  validateAmount,
+} from './cctp-utils.js'
 
 const DEFINITIONS = {
   mainnet: {
@@ -68,11 +89,30 @@ export function getDefinition(environment, chainId) {
   return definition
 }
 
+export function listChainIds(environment) {
+  assertEnvironment(environment)
+  return Object.keys(DEFINITIONS[environment])
+}
+
+/** CCTP v2 Fast Transfer is available when the chain exposes fastConfirmations. */
+export function supportsFastTransfer(environment, chainId) {
+  const definition = getDefinition(environment, chainId)
+  return definition?.cctp?.contracts?.v2?.fastConfirmations != null
+}
+
 export function getSolanaRpcEndpoint(environment) {
   const definition = getDefinition(environment, 'solana')
-  return (environment === 'mainnet'
+  const configured = environment === 'mainnet'
     ? import.meta.env.VITE_SOLANA_MAINNET_RPC
-    : import.meta.env.VITE_SOLANA_DEVNET_RPC) || definition.rpcEndpoints[0]
+    : import.meta.env.VITE_SOLANA_DEVNET_RPC
+  return (typeof configured === 'string' && configured.trim()) || definition.rpcEndpoints[0]
+}
+
+export function usesPublicSolanaRpc(environment) {
+  const configured = environment === 'mainnet'
+    ? import.meta.env.VITE_SOLANA_MAINNET_RPC
+    : import.meta.env.VITE_SOLANA_DEVNET_RPC
+  return !(typeof configured === 'string' && configured.trim())
 }
 
 function providerFromWalletAdapter(walletAdapter) {
@@ -108,8 +148,7 @@ function providerFromWalletAdapter(walletAdapter) {
   }
 }
 
-async function switchEvmChain(definition) {
-  const provider = window.ethereum
+async function switchEvmChain(definition, provider = window.ethereum) {
   if (!provider?.request) throw new Error('未检测到 EVM 钱包，请安装 MetaMask、Rabby 或 Coinbase Wallet。')
   const chainId = `0x${definition.chainId.toString(16)}`
   try {
@@ -121,7 +160,7 @@ async function switchEvmChain(definition) {
       method: 'wallet_addEthereumChain',
       params: [{
         chainId,
-        chainName: definition.title,
+        chainName: definition.title || definition.name,
         nativeCurrency: definition.nativeCurrency,
         rpcUrls: definition.rpcEndpoints,
         blockExplorerUrls: explorer ? [explorer] : [],
@@ -133,28 +172,58 @@ async function switchEvmChain(definition) {
 export async function connectSourceWallet(environment, chainId, solanaWalletAdapter) {
   const definition = getDefinition(environment, chainId)
   if (definition.type === 'evm') {
-    await switchEvmChain(definition)
-    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' })
+    const provider = window.ethereum
+    await switchEvmChain(definition, provider)
+    const accounts = await provider.request({ method: 'eth_requestAccounts' })
     const adapter = await createViemAdapterFromProvider({
-      provider: window.ethereum,
+      provider,
       capabilities: { addressContext: 'user-controlled', supportedChains: EVM_DEFINITIONS[environment] },
     })
-    return { adapter, address: accounts[0], provider: window.ethereum }
+    return {
+      adapter,
+      address: accounts[0],
+      provider,
+      chainId: definition.chainId,
+      family: 'evm',
+    }
   }
 
   if (!solanaWalletAdapter) throw new Error('请选择一个支持 Wallet Standard 的 Solana 钱包。')
   const provider = providerFromWalletAdapter(solanaWalletAdapter)
   const response = await provider.connect()
-  const connection = new Connection(
-    getSolanaRpcEndpoint(environment),
-    'confirmed',
-  )
+  const connection = new Connection(getSolanaRpcEndpoint(environment), 'confirmed')
   const adapter = await createSolanaAdapterFromProvider({
     provider,
     connection,
     capabilities: { addressContext: 'user-controlled', supportedChains: [definition] },
   })
-  return { adapter, address: response.publicKey.toString(), provider }
+  return {
+    adapter,
+    address: response.publicKey.toString(),
+    provider,
+    family: 'solana',
+  }
+}
+
+/**
+ * Listen for EVM wallet account/chain changes. Returns an unsubscribe function.
+ * On any meaningful change the app should disconnect rather than silently continue.
+ */
+export function attachEvmWalletListeners(provider, { onAccountsChanged, onChainChanged } = {}) {
+  if (!provider) return () => {}
+  const handleAccounts = (accounts) => onAccountsChanged?.(accounts)
+  const handleChain = (chainId) => onChainChanged?.(chainId)
+  if (typeof provider.on === 'function') {
+    provider.on('accountsChanged', handleAccounts)
+    provider.on('chainChanged', handleChain)
+    return () => {
+      provider.removeListener?.('accountsChanged', handleAccounts)
+      provider.removeListener?.('chainChanged', handleChain)
+      provider.off?.('accountsChanged', handleAccounts)
+      provider.off?.('chainChanged', handleChain)
+    }
+  }
+  return () => {}
 }
 
 export function validateRecipient(environment, chainId, address) {
@@ -171,6 +240,53 @@ export function validateRecipient(environment, chainId, address) {
   }
 }
 
+async function evmJsonRpc(definition, method, params) {
+  const endpoints = definition.rpcEndpoints || []
+  let lastError
+  for (const url of endpoints) {
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+      })
+      if (!response.ok) throw new Error(`RPC HTTP ${response.status}`)
+      const payload = await response.json()
+      if (payload.error) throw new Error(payload.error.message || 'RPC error')
+      return payload.result
+    } catch (error) {
+      lastError = error
+    }
+  }
+  throw lastError || new Error('No EVM RPC endpoints available')
+}
+
+export async function fetchUsdcBalance(environment, chainId, address) {
+  if (!address) return null
+  const definition = getDefinition(environment, chainId)
+  if (!definition.usdcAddress) return null
+
+  if (definition.type === 'evm') {
+    if (!isAddress(address)) return null
+    const data = `0x70a08231${address.slice(2).toLowerCase().padStart(64, '0')}`
+    const result = await evmJsonRpc(definition, 'eth_call', [
+      { to: definition.usdcAddress, data },
+      'latest',
+    ])
+    return formatUsdcFromMicro(BigInt(result))
+  }
+
+  const connection = new Connection(getSolanaRpcEndpoint(environment), 'confirmed')
+  const owner = new PublicKey(address)
+  const mint = new PublicKey(definition.usdcAddress)
+  const accounts = await connection.getParsedTokenAccountsByOwner(owner, { mint })
+  const total = accounts.value.reduce((sum, item) => {
+    const amount = item.account.data.parsed?.info?.tokenAmount?.amount
+    return sum + BigInt(amount || '0')
+  }, 0n)
+  return formatUsdcFromMicro(total)
+}
+
 function paramsFor({ environment, sourceId, destinationId, adapter, recipient, amount, speed }) {
   return {
     from: { adapter, chain: getDefinition(environment, sourceId).chain },
@@ -179,7 +295,7 @@ function paramsFor({ environment, sourceId, destinationId, adapter, recipient, a
       recipientAddress: recipient.trim(),
       useForwarder: true,
     },
-    amount,
+    amount: String(amount).trim(),
     token: 'USDC',
     config: {
       transferSpeed: speed === 'fast' ? 'FAST' : 'SLOW',
@@ -203,20 +319,18 @@ export async function executeTransfer(input, onEvent) {
 }
 
 export async function retryTransfer(result, adapter, onEvent) {
+  if (!isRetryableBridgeResult(result)) {
+    throw new Error('当前保存的转账记录不完整，无法自动重试。请用浏览器中的交易链接在区块浏览器核对，或重新发起转账。')
+  }
   const handler = (payload) => onEvent?.(payload)
   kit.on('*', handler)
   try {
-    // Forwarder-only destinations do not need a destination signer. Bridge Kit's
-    // retry context is structurally shared with two-adapter flows, so the source
-    // adapter is supplied for both fields and ignored for the forwarded mint step.
-    return await kit.retry(result, { from: adapter, to: adapter })
+    // Forwarder-only destinations: official RetryContext leaves `to` undefined so
+    // mint confirmation uses IRIS forwardState instead of a destination adapter.
+    return await kit.retry(result, { from: adapter, to: undefined })
   } finally {
     kit.off('*', handler)
   }
-}
-
-export function quoteFees(estimate) {
-  return (estimate?.fees || []).reduce((total, fee) => total + (Number(fee.amount) || 0), 0)
 }
 
 export function friendlyError(error) {
@@ -227,19 +341,84 @@ export function friendlyError(error) {
   return message.length > 260 ? `${message.slice(0, 257)}…` : message
 }
 
+function transferStorageKey(environment) {
+  return `relay:last-transfer:${environment}`
+}
+
 export function persistTransfer(result, environment) {
   if (!result) return
-  const summary = {
+  const payload = {
+    version: TRANSFER_STORAGE_VERSION,
     environment,
-    state: result.state,
-    amount: result.amount,
-    source: result.source?.chain?.name,
-    destination: result.destination?.chain?.name,
-    recipient: result.destination?.recipientAddress || result.destination?.address,
     updatedAt: new Date().toISOString(),
-    steps: (result.steps || []).map(({ name, state, txHash, explorerUrl, errorMessage }) => ({
-      name, state, txHash, explorerUrl, errorMessage,
-    })),
+    result: serializeBridgeResult(result),
+    summary: {
+      state: result.state,
+      amount: result.amount,
+      source: result.source?.chain?.name || result.source?.chain,
+      destination: result.destination?.chain?.name || result.destination?.chain,
+      recipient: result.destination?.recipientAddress || result.destination?.address,
+      steps: (result.steps || []).map(({ name, state, txHash, explorerUrl, errorMessage }) => ({
+        name, state, txHash, explorerUrl, errorMessage,
+      })),
+    },
   }
-  localStorage.setItem(`relay:last-transfer:${environment}`, JSON.stringify(summary))
+  try {
+    localStorage.setItem(transferStorageKey(environment), JSON.stringify(payload))
+  } catch {
+    try {
+      const slim = {
+        ...payload,
+        result: {
+          ...payload.result,
+          steps: payload.result.steps.map(({ data, ...rest }) => rest),
+        },
+      }
+      localStorage.setItem(transferStorageKey(environment), JSON.stringify(slim))
+    } catch {
+      localStorage.setItem(transferStorageKey(environment), JSON.stringify({
+        version: 1,
+        environment,
+        updatedAt: payload.updatedAt,
+        ...payload.summary,
+      }))
+    }
+  }
+}
+
+/**
+ * Load the last transfer for an environment.
+ * @returns {{ result: object|null, retryable: boolean, summary: object|null, updatedAt?: string, legacy?: boolean } | null}
+ */
+export function loadPersistedTransfer(environment) {
+  let raw
+  try {
+    raw = localStorage.getItem(transferStorageKey(environment))
+  } catch {
+    return null
+  }
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    if (parsed?.version === TRANSFER_STORAGE_VERSION && parsed.result) {
+      return {
+        result: parsed.result,
+        retryable: isRetryableBridgeResult(parsed.result),
+        summary: parsed.summary || null,
+        updatedAt: parsed.updatedAt,
+        environment: parsed.environment || environment,
+      }
+    }
+    const summary = parsed.summary || parsed
+    return {
+      result: summary,
+      retryable: isRetryableBridgeResult(summary),
+      summary,
+      updatedAt: parsed.updatedAt,
+      environment: parsed.environment || environment,
+      legacy: true,
+    }
+  } catch {
+    return null
+  }
 }
