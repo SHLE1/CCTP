@@ -186,7 +186,7 @@ function ConfirmationDialog({ action, busy, confirmed, onCancel, onConfirm, onCo
   )
 }
 
-export default function LookupTableManager({ environment }) {
+export default function LookupTableManager({ environment, onClose }) {
   const { connection } = useConnection()
   const {
     connected,
@@ -200,6 +200,27 @@ export default function LookupTableManager({ environment }) {
   const [confirmed, setConfirmed] = useState(false)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState(null)
+
+  function requestClose() {
+    if (busy || pendingAction) return
+    onClose?.()
+  }
+
+  useEffect(() => {
+    if (!onClose) return undefined
+    function onKeyDown(event) {
+      if (event.key !== 'Escape') return
+      if (busy) return
+      if (pendingAction) {
+        setPendingAction(null)
+        setConfirmed(false)
+        return
+      }
+      onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [busy, onClose, pendingAction])
 
   const loadTables = useCallback(async ({ silent = false } = {}) => {
     if (!connected || !publicKey) {
@@ -291,23 +312,39 @@ export default function LookupTableManager({ environment }) {
       <div className="lookup-heading">
         <div>
           <p className="section-kicker">Solana account recovery</p>
-          <h2 id="lookup-title">Lookup tables</h2>
+          <h2 id="lookup-title">Recover rent</h2>
+          <p className="lookup-heading-sub">
+            Deactivate unused Lookup Tables, then close them to reclaim SOL rent.
+          </p>
         </div>
-        {connected && publicKey && (
-          <div className="lookup-heading-actions">
-            <span className="lookup-wallet"><Wallet size={13} />{shortAddress(publicKey.toBase58())}</span>
+        <div className="lookup-heading-actions">
+          {connected && publicKey && (
+            <>
+              <span className="lookup-wallet"><Wallet size={13} />{shortAddress(publicKey.toBase58())}</span>
+              <button
+                type="button"
+                className="lookup-refresh"
+                onClick={() => loadTables()}
+                disabled={scan.status === 'loading' || busy}
+                aria-label="Refresh Lookup Tables"
+                title="Refresh Lookup Tables"
+              >
+                <RefreshCw className={scan.status === 'loading' ? 'spin' : ''} size={15} />
+              </button>
+            </>
+          )}
+          {onClose && (
             <button
               type="button"
-              className="lookup-refresh"
-              onClick={() => loadTables()}
-              disabled={scan.status === 'loading' || busy}
-              aria-label="Refresh Lookup Tables"
-              title="Refresh Lookup Tables"
+              className="icon-button lookup-close"
+              onClick={requestClose}
+              disabled={busy || Boolean(pendingAction)}
+              aria-label="Close rent recovery"
             >
-              <RefreshCw className={scan.status === 'loading' ? 'spin' : ''} size={15} />
+              <X size={18} />
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {!connected || !publicKey ? (

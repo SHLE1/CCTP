@@ -224,6 +224,25 @@ a { color: inherit; text-decoration: none; }
 }
 .topbar-link:hover { color: var(--text); }
 
+.topbar-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--theme-btn-bg);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  transition: border-color 120ms ease, transform 120ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.topbar-tool:hover { border-color: var(--border-strong); }
+.topbar-tool:active { transform: scale(0.97); }
+.topbar-tool svg { flex: 0 0 auto; color: var(--pill-fg); }
+
 .theme-toggle {
   width: 38px;
   height: 38px;
@@ -324,34 +343,6 @@ main {
   white-space: nowrap;
 }
 .ghost-btn:hover { opacity: 0.88; }
-
-.env-pills {
-  display: flex;
-  gap: 4px;
-  padding: 3px;
-  border-radius: 999px;
-  background: var(--field);
-  border: 1px solid var(--border);
-}
-.env-pill {
-  height: 26px;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 600;
-}
-.env-pill.active {
-  color: var(--text);
-  background: var(--surface);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-}
-.env-pill.active.mainnet {
-  color: var(--mainnet-fg);
-  background: var(--mainnet-bg);
-}
 
 /* Chains */
 .chain-grid {
@@ -1114,18 +1105,45 @@ main {
   font-weight: 750;
 }
 
+/* Lookup Table recovery drawer */
+.lookup-drawer-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  justify-content: flex-end;
+}
+.lookup-drawer {
+  position: relative;
+  z-index: 1;
+  width: min(560px, 100%);
+  height: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 18px 16px 40px;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  animation: lookup-drawer-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes lookup-drawer-in {
+  from { transform: translateX(18px); opacity: 0.72; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
 /* Lookup Table recovery */
 .lookup-section {
-  width: min(1100px, 100%);
-  margin-top: 34px;
+  width: 100%;
+  margin-top: 0;
 }
 .lookup-heading {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 18px;
-  margin-bottom: 14px;
-  padding: 0 4px;
+  gap: 14px;
+  margin-bottom: 16px;
+  padding: 0 2px;
 }
 .lookup-heading h2 {
   margin: 2px 0 0;
@@ -1134,11 +1152,21 @@ main {
   line-height: 1.2;
   letter-spacing: -0.025em;
 }
+.lookup-heading-sub {
+  margin: 8px 0 0;
+  max-width: 34ch;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+  font-weight: 500;
+}
 .lookup-heading-actions {
   display: flex;
   align-items: center;
+  flex-shrink: 0;
   gap: 8px;
 }
+.lookup-close:disabled { opacity: 0.4; cursor: not-allowed; }
 .lookup-wallet {
   min-height: 36px;
   display: inline-flex;
@@ -1166,24 +1194,26 @@ main {
 .lookup-refresh:disabled { opacity: 0.45; cursor: not-allowed; }
 .lookup-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(100px, 0.65fr)) minmax(170px, 1.15fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   border: 1px solid var(--border);
   border-radius: var(--radius-2xl);
-  background: var(--surface);
+  background: var(--field);
   overflow: hidden;
   margin-bottom: 12px;
 }
 .lookup-summary > div {
   min-width: 0;
-  min-height: 76px;
+  min-height: 72px;
   display: flex;
   flex-direction: column;
   justify-content: center;
   gap: 6px;
-  padding: 12px 18px;
+  padding: 12px 16px;
   border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
-.lookup-summary > div:last-child { border-right: 0; }
+.lookup-summary > div:nth-child(2n) { border-right: 0; }
+.lookup-summary > div:nth-child(n + 3) { border-bottom: 0; }
 .lookup-summary span {
   color: var(--muted);
   font-size: 10px;
@@ -1238,7 +1268,7 @@ main {
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius-2xl);
   color: var(--muted);
-  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  background: var(--field);
 }
 .lookup-empty > svg,
 .lookup-empty-icon {
@@ -1284,38 +1314,51 @@ main {
 .lookup-connect-button.wallet-adapter-button-trigger:active,
 .lookup-empty.connect .wallet-adapter-button-trigger:active { transform: scale(0.96); }
 .lookup-table-list { width: 100%; }
-.lookup-table-head,
+.lookup-table-head { display: none; }
 .lookup-row {
   display: grid;
-  grid-template-columns: minmax(220px, 1.25fr) minmax(90px, 0.55fr) minmax(140px, 0.8fr) minmax(175px, 0.9fr) minmax(150px, auto);
-  align-items: center;
-  gap: 16px;
-}
-.lookup-table-head {
-  min-height: 32px;
-  padding: 0 18px;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 700;
-}
-.lookup-row {
-  min-height: 78px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 14px 16px;
+  min-height: 0;
   margin-bottom: 8px;
-  padding: 12px 12px 12px 18px;
+  padding: 16px;
   border: 1px solid var(--border);
   border-radius: var(--radius-2xl);
-  background: var(--surface);
+  background: var(--field);
   box-shadow: 0 1px 2px color-mix(in srgb, var(--text) 3%, transparent);
 }
 .lookup-row.ready {
   border-color: color-mix(in srgb, var(--green) 32%, var(--border));
 }
 .lookup-identity {
+  grid-column: 1 / -1;
   min-width: 0;
   display: flex;
   align-items: center;
   gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
 }
+.lookup-row > [data-label] {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+.lookup-row > [data-label]::before {
+  content: attr(data-label);
+  color: var(--faint);
+  font: 700 9px var(--font-sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.lookup-row > .lookup-status {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+}
+.lookup-row > .lookup-status::before { grid-column: 1 / -1; }
+.lookup-status > svg { margin-top: 2px; }
 .lookup-table-mark {
   width: 36px;
   height: 36px;
@@ -1405,9 +1448,10 @@ main {
 .lookup-status.deactivating { color: var(--warn); }
 .lookup-status.ready { color: var(--green); }
 .lookup-row-action {
+  grid-column: 1 / -1;
   min-width: 0;
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 .lookup-action {
   min-height: 38px;
@@ -1444,6 +1488,7 @@ main {
   font-size: 11px;
   font-weight: 700;
 }
+.lookup-confirm-layer { z-index: 110; }
 .lookup-confirm-sheet { width: min(440px, 100%); }
 .lookup-confirm-sheet .sheet-head { align-items: flex-start; }
 .lookup-confirm-sheet .section-kicker { margin-bottom: 3px; }
@@ -2154,41 +2199,6 @@ main {
     right: auto;
     left: 0;
   }
-  .lookup-table-head { display: none; }
-  .lookup-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    align-items: start;
-    gap: 14px 16px;
-    padding: 16px;
-  }
-  .lookup-identity {
-    grid-column: 1 / -1;
-    padding-bottom: 12px;
-    border-bottom: 1px solid var(--border);
-  }
-  .lookup-row > [data-label] {
-    min-width: 0;
-    display: grid;
-    gap: 5px;
-  }
-  .lookup-row > [data-label]::before {
-    content: attr(data-label);
-    color: var(--faint);
-    font: 700 9px var(--font-sans);
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-  .lookup-row > .lookup-status {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: start;
-  }
-  .lookup-row > .lookup-status::before { grid-column: 1 / -1; }
-  .lookup-status > svg { margin-top: 2px; }
-  .lookup-row-action {
-    grid-column: 1 / -1;
-    justify-content: flex-start;
-  }
 }
 
 @media (max-width: 560px) {
@@ -2213,6 +2223,16 @@ main {
   .fast-toggle { margin-left: 0; justify-content: space-between; width: 100%; }
   .amount-input-wrap input { font-size: 1.5rem; }
   .topbar { padding: 0 12px; }
+  .topbar-tool {
+    width: 38px;
+    height: 38px;
+    min-height: 38px;
+    padding: 0;
+    justify-content: center;
+    border-radius: 999px;
+  }
+  .topbar-tool-label { display: none; }
+  .lookup-drawer { width: 100%; border-left: 0; padding: 14px 12px 32px; }
   main { justify-content: flex-start; padding-top: 12px; }
   .history-section { margin-top: 26px; }
   .history-heading { align-items: flex-start; }
@@ -2248,15 +2268,13 @@ main {
   .history-table-body { grid-template-columns: 1fr; }
   .history-action,
   .history-action-menu > summary { min-height: 38px; }
-  .lookup-section { margin-top: 26px; }
-  .lookup-heading { align-items: flex-start; }
-  .lookup-heading-actions { align-items: flex-end; flex-direction: column; }
+  .lookup-heading { flex-wrap: wrap; }
+  .lookup-heading-actions {
+    margin-left: auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
   .lookup-wallet { min-height: 32px; }
-  .lookup-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .lookup-summary > div { min-height: 68px; border-bottom: 1px solid var(--border); }
-  .lookup-summary > div:nth-child(2) { border-right: 0; }
-  .lookup-summary > div:nth-child(3),
-  .lookup-summary > div:nth-child(4) { border-bottom: 0; }
   .lookup-summary strong { font-size: 15px; }
   .lookup-empty.connect { align-items: flex-start; flex-wrap: wrap; }
   .lookup-empty.connect > div { flex: 1; }
@@ -2267,7 +2285,6 @@ main {
   .lookup-row { grid-template-columns: 1fr; }
   .lookup-metric,
   .lookup-status { grid-column: 1; }
-  .lookup-row-action { grid-column: 1; }
   .lookup-action { width: 100%; }
   .lookup-confirm-details > div { grid-template-columns: 78px minmax(0, 1fr); }
 }

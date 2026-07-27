@@ -1,6 +1,6 @@
 # Relay — CCTP USDC bridge
 
-An independent interface for moving native USDC between Solana and EVM chains with Circle CCTP V2. Users can self-claim with a destination wallet to avoid the Orbit fee, or choose Circle Orbit for automatic destination minting. The app includes an explicit Mainnet/Testnet switch and starts in Testnet mode on first visit.
+An independent interface for moving native USDC between Solana and EVM chains with Circle CCTP V2. Users can self-claim with a destination wallet to avoid the Orbit fee, or choose Circle Orbit for automatic destination minting. The app runs on CCTP mainnet only.
 
 ## Run locally
 
@@ -13,8 +13,7 @@ Build the production bundle with `pnpm build`. Run pure unit tests with `pnpm te
 
 ## Included
 
-- Mainnet/Testnet environment switching with isolated wallet and quote state
-- Solana and EVM route selection, including Sonic
+- Solana and EVM mainnet route selection, including Sonic
 - Wallet Standard auto-discovery for Solana wallets such as Backpack, Phantom and Solflare
 - EIP-6963 EVM wallet discovery for explicit MetaMask, Rabby, and Coinbase Wallet selection (with legacy fallback and account/chain change disconnect)
 - Self-claim mode with destination-wallet mint signing, no Orbit fee, destination gas preflight, and automatic Solana ATA creation
@@ -22,7 +21,7 @@ Build the production bundle with `pnpm build`. Run pure unit tests with `pnpm te
 - 60-second quote expiry plus immediate pre-signing USDC and buffered native-gas balance rechecks
 - Canonical source-account USDC balance preflight and 6-decimal amount validation
 - Solana destination ATA preflight (Self-claim can create a missing ATA; Orbit requires an existing ATA)
-- Real CCTP V2 Testnet burn → attest → forwarded mint execution
+- Real CCTP V2 mainnet burn → attest → mint execution
 - Fast and Standard transfer modes (driven by Bridge Kit `fastConfirmations`)
 - Step-by-step `BridgeResult` persistence for in-browser resume + `kit.retry` (forwarder-safe)
 - Transaction explorer links and beforeunload protection while a transfer is in flight
@@ -30,16 +29,14 @@ Build the production bundle with `pnpm build`. Run pure unit tests with `pnpm te
 
 ## Networks
 
-The environment selector maps every UI route to the corresponding Circle Bridge Kit mainnet or testnet chain definition. Switching environments disconnects the active wallet and clears the recipient, quote, and unsubmitted transfer state.
-
-For Solana, set dedicated RPC endpoints before mainnet use. Mainnet routes involving
-Solana are disabled when `VITE_SOLANA_MAINNET_RPC` is not configured:
+Routes use Circle Bridge Kit mainnet chain definitions. For Solana, set a dedicated
+RPC endpoint before use. Mainnet routes involving Solana are disabled when
+`VITE_SOLANA_MAINNET_RPC` is not configured:
 
 ```bash
 cp .env.example .env
 # edit:
 VITE_SOLANA_MAINNET_RPC=https://your-solana-mainnet-rpc.example
-VITE_SOLANA_DEVNET_RPC=https://your-solana-devnet-rpc.example
 ```
 
 Never place private keys or RPC secrets in `VITE_*` variables. Browser-visible variables are public.
@@ -65,7 +62,7 @@ claim adapter.
 
 ## Production warning
 
-Mainnet mode can move **real USDC** and spend real gas. Before relying on this as a public fallback service, add durable off-device transaction storage, multi-RPC failover, analytics/monitoring, compliance controls, broader end-to-end tests, and an independent smart-contract/frontend security review.
+This app can move **real USDC** and spend real gas. Before relying on this as a public fallback service, add durable off-device transaction storage, multi-RPC failover, analytics/monitoring, compliance controls, broader end-to-end tests, and an independent smart-contract/frontend security review.
 
 For a first mainnet smoke test: use a dedicated source wallet and RPC, request a
 fresh quote, and choose an amount whose displayed **Receive** value is greater than

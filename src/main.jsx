@@ -10,6 +10,7 @@ import {
   CircleAlert,
   CircleCheck,
   Clock3,
+  Coins,
   ExternalLink,
   Filter,
   Info,
@@ -94,7 +95,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'Which blockchains are supported?',
-    a: 'This app supports the CCTP V2 networks available in Bridge Kit for the selected environment (Mainnet or Testnet), including major EVM chains and Solana.',
+    a: 'This app supports the CCTP V2 mainnet networks available in Bridge Kit, including major EVM chains and Solana.',
   },
   {
     q: 'Are there any fees?',
@@ -106,37 +107,26 @@ const FAQ_ITEMS = [
   },
 ]
 
+const ENVIRONMENT = 'mainnet'
+const ENVIRONMENT_LABEL = 'Mainnet'
+
 const CHAIN_NAMES = {
-  mainnet: {
-    ethereum: 'Ethereum',
-    base: 'Base',
-    arbitrum: 'Arbitrum',
-    optimism: 'Optimism',
-    avalanche: 'Avalanche',
-    polygon: 'Polygon',
-    unichain: 'Unichain',
-    sonic: 'Sonic',
-    solana: 'Solana',
-  },
-  testnet: {
-    ethereum: 'Sepolia',
-    base: 'Base Sepolia',
-    arbitrum: 'Arb Sepolia',
-    optimism: 'OP Sepolia',
-    avalanche: 'Fuji',
-    polygon: 'Amoy',
-    unichain: 'Unichain Sepolia',
-    sonic: 'Sonic Testnet',
-    solana: 'Solana Devnet',
-  },
+  ethereum: 'Ethereum',
+  base: 'Base',
+  arbitrum: 'Arbitrum',
+  optimism: 'Optimism',
+  avalanche: 'Avalanche',
+  polygon: 'Polygon',
+  unichain: 'Unichain',
+  sonic: 'Sonic',
+  solana: 'Solana',
 }
 
-const ENVIRONMENT_LABELS = { mainnet: 'Mainnet', testnet: 'Testnet' }
-const makeChains = (environment) => Object.entries(CHAIN_NAMES[environment]).map(([id, name]) => ({
+const makeChains = () => Object.entries(CHAIN_NAMES).map(([id, name]) => ({
   id,
   name,
   ...CHAIN_META[id],
-  supportsFast: supportsFastTransfer(environment, id),
+  supportsFast: supportsFastTransfer(ENVIRONMENT, id),
 }))
 
 const shortAddress = (value) => value ? `${value.slice(0, 5)}…${value.slice(-4)}` : ''
@@ -349,10 +339,8 @@ function WalletModal({ chain, environment, onClose, onConnected }) {
             )}
             {message && <p className="error-message"><Info size={14} />{message}</p>}
           </>}
-        <p className={`legal-note ${environment === 'mainnet' ? 'mainnet-note' : ''}`}>
-          {environment === 'mainnet'
-            ? 'Mainnet uses real USDC and gas. Connecting does not move funds.'
-            : 'Testnet uses test assets. Connecting does not move funds.'}
+        <p className="legal-note mainnet-note">
+          Mainnet uses real USDC and gas. Connecting does not move funds.
         </p>
       </div>
     </div>
@@ -372,7 +360,6 @@ const PHASE_HEADING = {
 }
 
 function ProgressModal({
-  environment,
   source,
   destination,
   amount,
@@ -456,7 +443,7 @@ function ProgressModal({
       ? (canRetry ? 'Retry from last step' : 'Close')
       : busy
         ? 'Keep this open…'
-        : `Start ${ENVIRONMENT_LABELS[environment]} transfer`
+        : `Start ${ENVIRONMENT_LABEL} transfer`
 
   return (
     <div className="modal-layer" role="dialog" aria-modal="true" aria-labelledby="progress-modal-title">
@@ -556,12 +543,10 @@ function ProgressModal({
           </div>
         )}
         {phase === 'ready' && (
-          <div className={`real-warning ${environment === 'mainnet' ? 'mainnet-warning' : ''}`}>
+          <div className="real-warning mainnet-warning">
             <Info size={15} />
             <span>
-              {environment === 'mainnet'
-                ? <><strong>Mainnet.</strong> Real USDC will be burned. Check network, address, amount, and completion mode. Keep this tab open until mint completes.</>
-                : <><strong>Testnet.</strong> Test USDC will be burned and minted with the selected completion mode. Keep this tab open until mint completes.</>}
+              <strong>Mainnet.</strong> Real USDC will be burned. Check network, address, amount, and completion mode. Keep this tab open until mint completes.
             </span>
           </div>
         )}
@@ -582,7 +567,7 @@ function ProgressModal({
   )
 }
 
-function BridgeCard({ environment, onEnvironmentChange, chains, resumeRequest = 0 }) {
+function BridgeCard({ environment, chains, resumeRequest = 0 }) {
   const solanaWalletState = useWallet()
   const [sourceId, setSourceId] = useState('base')
   const [destinationId, setDestinationId] = useState('solana')
@@ -630,7 +615,7 @@ function BridgeCard({ environment, onEnvironmentChange, chains, resumeRequest = 
   const receive = quote.data && !amountError ? subtractUsdcAmounts(amount, feeBreakdown.total) : null
   const publicSolanaRpc = usesPublicSolanaRpc(environment)
   const solanaRoute = sourceId === 'solana' || destinationId === 'solana'
-  const rpcNotReady = environment === 'mainnet' && solanaRoute && publicSolanaRpc
+  const rpcNotReady = solanaRoute && publicSolanaRpc
   const currentQuoteKey = quoteInputKey({
     environment,
     sourceId,
@@ -841,30 +826,6 @@ function BridgeCard({ environment, onEnvironmentChange, chains, resumeRequest = 
   function setDestination(value) {
     setDestinationId(value)
     setDestinationWallet(null)
-  }
-
-  async function changeEnvironment(value) {
-    if (value === environment) return
-    await wallet?.provider?.disconnect?.().catch?.(() => {})
-    if (destinationWallet?.provider !== wallet?.provider) {
-      await destinationWallet?.provider?.disconnect?.().catch?.(() => {})
-    }
-    setWallet(null)
-    setDestinationWallet(null)
-    setRecipient('')
-    setQuote({ status: 'idle', data: null, error: '', key: '', quotedAt: 0 })
-    setTransfer({
-      open: false,
-      phase: 'ready',
-      error: '',
-      warning: '',
-      result: null,
-      canRetry: false,
-    })
-    try {
-      localStorage.setItem('relay:environment', value)
-    } catch { /* environment still changes even when storage is unavailable */ }
-    onEnvironmentChange(value)
   }
 
   const recipientError = validateRecipient(environment, destinationId, recipient)
@@ -1343,19 +1304,6 @@ function BridgeCard({ environment, onEnvironmentChange, chains, resumeRequest = 
           <button type="button" className="ghost-btn" onClick={resumeLastTransfer}>
             Resume transfer
           </button>
-          <div className="env-pills">
-            {Object.entries(ENVIRONMENT_LABELS).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                className={`env-pill ${environment === key ? `active ${key}` : ''}`}
-                onClick={() => changeEnvironment(key)}
-                aria-pressed={environment === key}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
         </div>
       </div>
 
@@ -1559,7 +1507,6 @@ function BridgeCard({ environment, onEnvironmentChange, chains, resumeRequest = 
       )}
       {transfer.open && (
         <ProgressModal
-          environment={environment}
           source={modalSource}
           destination={modalDestination}
           amount={transfer.result?.amount || amount || '0'}
@@ -1743,7 +1690,7 @@ function TransferHistory({ environment, chains, onResume }) {
     <section className="history-section" aria-labelledby="history-title">
       <div className="history-heading">
         <div>
-          <p className="section-kicker">{ENVIRONMENT_LABELS[environment]} activity</p>
+          <p className="section-kicker">{ENVIRONMENT_LABEL} activity</p>
           <h2 id="history-title">Recent transfers</h2>
         </div>
         <span>Saved in this browser</span>
@@ -1809,7 +1756,7 @@ function TransferHistory({ environment, chains, onResume }) {
           </div>
 
           {filteredRecords.length ? (
-            <div className="history-table" role="table" aria-label={`${ENVIRONMENT_LABELS[environment]} transfer history`}>
+            <div className="history-table" role="table" aria-label={`${ENVIRONMENT_LABEL} transfer history`}>
           <div className="history-table-head" role="row">
             <span role="columnheader">Time</span>
             <span role="columnheader">Source</span>
@@ -1869,7 +1816,7 @@ function TransferHistory({ environment, chains, onResume }) {
           <Clock3 size={21} />
           <div>
             <strong>No on-chain transfers yet</strong>
-            <p>Completed and recoverable {ENVIRONMENT_LABELS[environment]} transfers will appear here.</p>
+            <p>Completed and recoverable {ENVIRONMENT_LABEL} transfers will appear here.</p>
           </div>
         </div>
       )}
@@ -1897,14 +1844,24 @@ function applyTheme(theme) {
   } catch { /* ignore */ }
 }
 
-function App({ environment, setEnvironment }) {
-  const chains = useMemo(() => makeChains(environment), [environment])
+function App({ environment }) {
+  const chains = useMemo(() => makeChains(), [])
   const [theme, setTheme] = useState(resolveInitialTheme)
   const [resumeRequest, setResumeRequest] = useState(0)
+  const [lookupOpen, setLookupOpen] = useState(false)
 
   useEffect(() => {
     applyTheme(theme)
   }, [theme])
+
+  useEffect(() => {
+    if (!lookupOpen) return undefined
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [lookupOpen])
 
   function toggleTheme() {
     setTheme((current) => (current === 'dark' ? 'light' : 'dark'))
@@ -1922,6 +1879,18 @@ function App({ environment, setEnvironment }) {
           Relay
         </a>
         <div className="topbar-right">
+          <button
+            type="button"
+            className="topbar-tool"
+            onClick={() => setLookupOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={lookupOpen}
+            aria-label="Recover Solana rent"
+            title="Recover Solana rent"
+          >
+            <Coins size={14} />
+            <span className="topbar-tool-label">Recover rent</span>
+          </button>
           <a
             className="topbar-link"
             href="https://developers.circle.com/cctp"
@@ -1945,7 +1914,6 @@ function App({ environment, setEnvironment }) {
       <main>
         <BridgeCard
           environment={environment}
-          onEnvironmentChange={setEnvironment}
           chains={chains}
           resumeRequest={resumeRequest}
         />
@@ -1959,8 +1927,6 @@ function App({ environment, setEnvironment }) {
             document.getElementById('bridge')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
           }}
         />
-
-        <LookupTableManager environment={environment} />
 
         <section className="faq" aria-label="Frequently asked questions">
           <h2>FAQ</h2>
@@ -1989,26 +1955,40 @@ function App({ environment, setEnvironment }) {
           Relay · {chains.length} chains · Independent UI, not affiliated with Circle.
         </p>
       </footer>
+
+      {lookupOpen && (
+        <div
+          className="lookup-drawer-layer"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="lookup-title"
+        >
+          <button
+            type="button"
+            className="modal-backdrop"
+            onClick={() => setLookupOpen(false)}
+            aria-label="Close rent recovery"
+          />
+          <div className="lookup-drawer">
+            <LookupTableManager
+              environment={environment}
+              onClose={() => setLookupOpen(false)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 function RelayRoot() {
-  const [environment, setEnvironment] = useState(() => {
-    try {
-      const saved = localStorage.getItem('relay:environment')
-      return saved === 'mainnet' || saved === 'testnet' ? saved : 'testnet'
-    } catch {
-      return 'testnet'
-    }
-  })
-  const solanaEndpoint = useMemo(() => getSolanaRpcEndpoint(environment), [environment])
+  const solanaEndpoint = useMemo(() => getSolanaRpcEndpoint(ENVIRONMENT), [])
 
   return (
     <ConnectionProvider endpoint={solanaEndpoint}>
       <WalletProvider wallets={[]} autoConnect={false} localStorageKey="relay:solana-wallet">
         <WalletModalProvider>
-          <App environment={environment} setEnvironment={setEnvironment} />
+          <App environment={ENVIRONMENT} />
         </WalletModalProvider>
       </WalletProvider>
     </ConnectionProvider>
