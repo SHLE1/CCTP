@@ -84,6 +84,54 @@ export function isQuoteFresh(quotedAt, now = Date.now(), ttl = QUOTE_TTL_MS) {
     && now - quotedAt < ttl
 }
 
+/**
+ * Start a quote refresh without blanking the previous quote payload.
+ * Keeps fee/receive display stable while Start remains gated on status === 'ready'.
+ */
+export function beginQuoteRefresh(current, requestKey) {
+  const prev = current && typeof current === 'object' ? current : {}
+  return {
+    status: 'loading',
+    data: prev.data ?? null,
+    error: '',
+    key: requestKey,
+    quotedAt: 0,
+  }
+}
+
+/** Refresh failed: keep prior quote data for display, surface error, block Start. */
+export function failQuoteRefresh(current, requestKey, errorMessage) {
+  const prev = current && typeof current === 'object' ? current : {}
+  return {
+    status: 'error',
+    data: prev.data ?? null,
+    error: String(errorMessage || 'Quote refresh failed'),
+    key: requestKey,
+    quotedAt: 0,
+  }
+}
+
+/** Confirm sheet may start only when a fresh matching quote is ready. */
+export function canStartTransferFromQuote(quoteStatus, quoteIsCurrent) {
+  return quoteStatus === 'ready' && quoteIsCurrent === true
+}
+
+/** Single amount-field message for aria-describedby (priority order). */
+export function resolveAmountFieldError({
+  amount = '',
+  amountError = '',
+  balanceStatus = 'idle',
+  balanceError = '',
+  balanceTooLow = false,
+  feeTooHigh = false,
+} = {}) {
+  if (amount && amountError) return amountError
+  if (balanceStatus === 'error') return balanceError || 'USDC balance is unavailable'
+  if (balanceTooLow) return 'Amount exceeds USDC balance'
+  if (feeTooHigh) return 'Amount must be greater than all quoted USDC fees'
+  return ''
+}
+
 export function safeExplorerUrl(value) {
   if (typeof value !== 'string') return ''
   try {

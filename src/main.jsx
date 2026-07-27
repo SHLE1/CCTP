@@ -24,6 +24,8 @@ import {
   QUOTE_TTL_MS,
   assertSourceWalletReady,
   attachEvmWalletListeners,
+  beginQuoteRefresh,
+  canStartTransferFromQuote,
   checkDestinationGasReadiness,
   checkDestinationReadiness,
   checkSourceGasReadiness,
@@ -31,6 +33,7 @@ import {
   createTransferDraft,
   estimateTransfer,
   executeTransfer,
+  failQuoteRefresh,
   fetchUsdcBalance,
   findChainIdForDefinition,
   friendlyError,
@@ -49,6 +52,7 @@ import {
   persistTransfer,
   quoteInputKey,
   quoteFeeBreakdown,
+  resolveAmountFieldError,
   retryTransfer,
   safeExplorerUrl,
   sanitizeAmountInput,
@@ -189,9 +193,31 @@ function UsdcMark() {
   )
 }
 
+function useEscapeToClose(open, onClose, enabled = true) {
+  useEffect(() => {
+    if (!open || !enabled || !onClose) return undefined
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onClose()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [enabled, onClose, open])
+}
+
+function formatQuoteCountdown(ms) {
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
+}
+
 function ChainSelect({ chains, label, value, otherValue, onChange }) {
   const [open, setOpen] = useState(false)
   const selected = findChain(chains, value)
+  useEscapeToClose(open, () => setOpen(false))
   return (
     <div className="field-group chain-field">
       <span className="field-label">{label}</span>
@@ -201,11 +227,11 @@ function ChainSelect({ chains, label, value, otherValue, onChange }) {
         <ChevronRight className="chev" size={16} strokeWidth={2} />
       </button>
       {open && (
-        <div className="modal-layer" role="dialog" aria-modal="true">
+        <div className="modal-layer" role="dialog" aria-modal="true" aria-labelledby="chain-select-title">
           <button className="modal-backdrop" onClick={() => setOpen(false)} aria-label="Close chain selector" />
           <div className="sheet">
             <div className="sheet-head">
-              <h3>Select chain</h3>
+              <h3 id="chain-select-title">Select chain</h3>
               <button className="icon-button" onClick={() => setOpen(false)} aria-label="Close"><X size={18} /></button>
             </div>
             <div className="chain-list">
@@ -280,6 +306,7 @@ function WalletModal({ chain, environment, onClose, onConnected }) {
   const [connectingProvider, setConnectingProvider] = useState('')
   const [message, setMessage] = useState('')
   const [evmProviders, setEvmProviders] = useState([])
+  useEscapeToClose(true, onClose, !connectingProvider)
 
   useEffect(() => {
     if (chain.family !== 'evm') return undefined
@@ -307,11 +334,11 @@ function WalletModal({ chain, environment, onClose, onConnected }) {
   }
 
   return (
-    <div className="modal-layer" role="dialog" aria-modal="true">
+    <div className="modal-layer" role="dialog" aria-modal="true" aria-labelledby="wallet-modal-title">
       <button className="modal-backdrop" onClick={onClose} aria-label="Close wallet dialog" />
       <div className="sheet">
         <div className="sheet-head">
-          <h3>Connect · {chain.name}</h3>
+          <h3 id="wallet-modal-title">Connect · {chain.name}</h3>
           <button className="icon-button" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
         {chain.family === 'solana'
@@ -366,6 +393,11 @@ function ProgressModal({
   speed,
   settlementMode,
   phase,
+  quoteCountdownLabel = '',
+  quoteStatus = 'idle',
+  quoteError = '',
+  quoteIsCurrent = false,
+  onRefreshQuote = null,
   error,
   warning,
   result,
@@ -382,6 +414,8 @@ function ProgressModal({
   onRetry,
 }) {
   const busy = ['approve', 'burn', 'attest', 'mint'].includes(phase)
+  const quoteRefreshing = phase === 'ready' && quoteStatus === 'loading'
+  const startBlocked = phase === 'ready' && !canStartTransferFromQuote(quoteStatus, quoteIsCurrent)
   const phaseIndex = PHASE_INDEX[phase] ?? 0
   const totalSteps = 4
   const displayStep = phase === 'success' ? totalSteps : Math.min(phaseIndex + 1, totalSteps)
@@ -432,6 +466,8 @@ function ProgressModal({
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
   }, [busy])
 
+  useEscapeToClose(true, onClose, !busy)
+
   const primaryAction = phase === 'success'
     ? onClose
     : phase === 'error'
@@ -443,7 +479,11 @@ function ProgressModal({
       ? (canRetry ? 'Retry from last step' : 'Close')
       : busy
         ? 'Keep this open…'
-        : `Start ${ENVIRONMENT_LABEL} transfer`
+        : quoteRefreshing
+          ? 'Refreshing quote…'
+          : startBlocked
+            ? (quoteStatus === 'error' ? 'Quote unavailable' : 'Waiting for quote…')
+            : `Start ${ENVIRONMENT_LABEL} transfer`
 
   return (
     <div className="modal-layer" role="dialog" aria-modal="true" aria-labelledby="progress-modal-title">
@@ -467,7 +507,10 @@ function ProgressModal({
             aria-valuemax={100}
             aria-label={`Transfer progress ${progressPct}%`}
           >
-            <span className="progress-track-fill" style={{ width: `${progressPct}%` }} />
+            <span
+              className="progress-track-fill"
+              style={{ transform: `scaleX(${Math.max(0, Math.min(1, progressPct / 100))})` }}
+            />
           </div>
         )}
         {routeVerified
@@ -484,6 +527,31 @@ function ProgressModal({
               <strong>{amount || '0'} USDC · saved route unavailable</strong>
             </div>
           )}
+        {phase === 'ready' && (quoteCountdownLabel || onRefreshQuote || quoteRefreshing) && (
+          <p className="quote-freshness confirm-quote-freshness" role="status">
+            {quoteRefreshing
+              ? <span>Refreshing quote…</span>
+              : quoteCountdownLabel
+                ? <span>Quote valid for <strong>{quoteCountdownLabel}</strong></span>
+                : <span>Quote not ready</span>}
+            {onRefreshQuote && (
+              <button
+                type="button"
+                className="quote-refresh"
+                onClick={onRefreshQuote}
+                disabled={quoteRefreshing}
+              >
+                {quoteRefreshing ? 'Refreshing…' : 'Refresh quote'}
+              </button>
+            )}
+          </p>
+        )}
+        {phase === 'ready' && quoteError && (
+          <div className="error-message quote-error" role="alert">
+            <Info size={15} />
+            <span>{quoteError}</span>
+          </div>
+        )}
         {phase === 'ready' && (
           <div className="confirm-details">
             <span>Source wallet</span>
@@ -558,8 +626,12 @@ function ProgressModal({
         {retryBlockedReason && (
           <div className="error-message"><Info size={15} /><span>{retryBlockedReason}</span></div>
         )}
-        <button className="primary-button" onClick={primaryAction} disabled={busy}>
-          {busy && <LoaderCircle className="spin" size={16} />}
+        <button
+          className="primary-button"
+          onClick={primaryAction}
+          disabled={busy || startBlocked}
+        >
+          {(busy || quoteRefreshing) && <LoaderCircle className="spin" size={16} />}
           {primaryLabel}
         </button>
       </div>
@@ -594,6 +666,8 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
     canRetry: false,
   })
   const [balance, setBalance] = useState({ status: 'idle', value: null, error: '' })
+  const [quoteRemainingMs, setQuoteRemainingMs] = useState(0)
+  const [incompleteNotice, setIncompleteNotice] = useState(null)
   const quoteRequestRef = useRef(0)
   const quoteKeyRef = useRef('')
   const activeTransferRef = useRef(null)
@@ -693,9 +767,14 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
   ])
 
   useEffect(() => {
-    if (quote.status !== 'ready' || !quote.quotedAt) return undefined
-    const remaining = Math.max(0, quote.quotedAt + QUOTE_TTL_MS - Date.now())
-    const timer = window.setTimeout(() => {
+    if (quote.status !== 'ready' || !quote.quotedAt) {
+      setQuoteRemainingMs(0)
+      return undefined
+    }
+    const tick = () => {
+      const remaining = Math.max(0, quote.quotedAt + QUOTE_TTL_MS - Date.now())
+      setQuoteRemainingMs(remaining)
+      if (remaining > 0) return
       setQuote((current) => {
         if (current.status !== 'ready' || current.key !== quote.key) return current
         return {
@@ -715,9 +794,48 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
             }
           : current
       ))
-    }, remaining)
-    return () => window.clearTimeout(timer)
+    }
+    tick()
+    const timer = window.setInterval(tick, 250)
+    return () => window.clearInterval(timer)
   }, [quote.key, quote.quotedAt, quote.status])
+
+  useEffect(() => {
+    if (transfer.open || transferInFlightRef.current) {
+      setIncompleteNotice(null)
+      return undefined
+    }
+    const saved = loadPersistedTransfer(environment)
+    if (!saved?.result || saved.legacy) {
+      setIncompleteNotice(null)
+      return undefined
+    }
+    const state = saved.result.state || saved.summary?.state
+    if (state === 'success' || !saved.retryable) {
+      setIncompleteNotice(null)
+      return undefined
+    }
+    const fromId = findChainIdForDefinition(environment, saved.result.source?.chain)
+    const toId = findChainIdForDefinition(environment, saved.result.destination?.chain)
+    const fromName = fromId ? (findChain(chains, fromId)?.name || fromId) : 'source'
+    const toName = toId ? (findChain(chains, toId)?.name || toId) : 'destination'
+    const stepIndex = Array.isArray(saved.result.steps)
+      ? saved.result.steps.findIndex((step) => step?.state === 'pending' || step?.state === 'error')
+      : -1
+    const stepLabel = stepIndex >= 0
+      ? (saved.result.steps[stepIndex]?.name
+        || saved.result.steps[stepIndex]?.title
+        || `Step ${stepIndex + 1}`)
+      : 'In progress'
+    setIncompleteNotice({
+      amount: String(saved.result.amount || saved.summary?.amount || ''),
+      fromName,
+      toName,
+      stepLabel,
+      state: state || 'pending',
+    })
+    return undefined
+  }, [chains, environment, transfer.open, transfer.phase, transfer.result])
 
   useEffect(() => {
     if (!source.supportsFast && speed === 'fast') setSpeed('standard')
@@ -856,7 +974,7 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
     const requestId = ++quoteRequestRef.current
     const requestKey = currentQuoteKey
     const input = bridgeInput()
-    setQuote({ status: 'loading', data: null, error: '', key: requestKey, quotedAt: 0 })
+    setQuote((current) => beginQuoteRefresh(current, requestKey))
     try {
       await checkDestinationReadiness(environment, destinationId, recipient, useForwarder)
         .then((status) => {
@@ -888,13 +1006,7 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
       })
     } catch (error) {
       if (requestId !== quoteRequestRef.current || requestKey !== quoteKeyRef.current) return
-      setQuote({
-        status: 'error',
-        data: null,
-        error: friendlyError(error),
-        key: requestKey,
-        quotedAt: 0,
-      })
+      setQuote((current) => failQuoteRefresh(current, requestKey, friendlyError(error)))
     }
   }
 
@@ -1284,6 +1396,22 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
     )),
   )
 
+  const quoteCountdownLabel = quoteIsCurrent && quoteRemainingMs > 0
+    ? formatQuoteCountdown(quoteRemainingMs)
+    : ''
+  const amountErrorId = 'amount-field-error'
+  const recipientErrorId = 'recipient-field-error'
+  const amountFieldMessage = resolveAmountFieldError({
+    amount,
+    amountError,
+    balanceStatus: balance.status,
+    balanceError: balance.error,
+    balanceTooLow,
+    feeTooHigh,
+  })
+  const amountInvalid = Boolean(amountFieldMessage)
+  const recipientInvalid = Boolean(recipient && recipientError)
+
   return (
     <div className="bridge-card" id="bridge">
       <div className="card-topline">
@@ -1297,7 +1425,7 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
           </span>
           <div>
             <h1>Transfer USDC</h1>
-            <p className="card-sub">Native USDC across chains via Circle CCTP.</p>
+            <p className="card-sub">Native USDC across chains via Circle CCTP. Mainnet only.</p>
           </div>
         </div>
         <div className="card-actions">
@@ -1306,6 +1434,23 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
           </button>
         </div>
       </div>
+
+      {incompleteNotice && (
+        <div className="resume-banner" role="status">
+          <div className="resume-banner-copy">
+            <strong>Incomplete transfer</strong>
+            <span>
+              {incompleteNotice.amount ? `${incompleteNotice.amount} USDC · ` : ''}
+              {incompleteNotice.fromName} → {incompleteNotice.toName}
+              {' · '}
+              {incompleteNotice.stepLabel}
+            </span>
+          </div>
+          <button type="button" className="ghost-btn resume-banner-action" onClick={resumeLastTransfer}>
+            Resume
+          </button>
+        </div>
+      )}
 
       {rpcNotReady && (
         <div className="rpc-banner blocking" role="alert">
@@ -1353,8 +1498,19 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
         </button>
       </div>
 
+      {settlementMode === 'manual' && (
+        <div className="mode-callout" role="note">
+          <Info size={14} />
+          <span>
+            {source.family === destination.family
+              ? `Self-claim: your connected ${destination.name} wallet signs the destination mint. Fund it with native gas before transfer.`
+              : `Self-claim: you will also connect a ${destination.name} claim wallet to sign mint. Prefer Orbit if you only want one wallet and accept the quoted USDC fee.`}
+          </span>
+        </div>
+      )}
+
       <div className="amount-panel">
-        <span className="field-label">Amount</span>
+        <span className="field-label" id="amount-label">Amount</span>
         <div className="amount-row">
           <span className="asset-pill">
             <UsdcMark />
@@ -1366,7 +1522,10 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
               onChange={(e) => setAmount(sanitizeAmountInput(e.target.value))}
               inputMode="decimal"
               placeholder="0.0"
+              aria-labelledby="amount-label"
               aria-label="USDC amount"
+              aria-invalid={amountInvalid || undefined}
+              aria-describedby={amountInvalid ? amountErrorId : undefined}
             />
             <span className="balance-hint">
               Balance: {balanceLabel}
@@ -1382,15 +1541,14 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
             </span>
           </div>
         </div>
-        {amount && amountError && <small className="field-error">{amountError}</small>}
-        {balance.status === 'error' && <small className="field-error">{balance.error || 'USDC balance is unavailable'}</small>}
-        {balanceTooLow && <small className="field-error">Amount exceeds USDC balance</small>}
-        {feeTooHigh && <small className="field-error">Amount must be greater than all quoted USDC fees</small>}
+        {amountFieldMessage && (
+          <small className="field-error" id={amountErrorId}>{amountFieldMessage}</small>
+        )}
       </div>
 
       <div className="recipient-panel">
         <div className="amount-meta">
-          <span className="field-label">Recipient on {destination.name}</span>
+          <span className="field-label" id="recipient-label">Recipient on {destination.name}</span>
           {(claimWallet || (useForwarder && wallet && source.family === destination.family)) && (
             <button
               type="button"
@@ -1405,10 +1563,15 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
           value={recipient}
           onChange={(event) => setRecipient(event.target.value.trim())}
           placeholder={destination.family === 'evm' ? '0x…' : 'Solana address…'}
+          aria-labelledby="recipient-label"
           aria-label="Destination recipient address"
+          aria-invalid={recipientInvalid || undefined}
+          aria-describedby={recipientInvalid ? recipientErrorId : undefined}
           spellCheck="false"
         />
-        {recipient && recipientError && <small className="field-error">{recipientError}</small>}
+        {recipient && recipientError && (
+          <small className="field-error" id={recipientErrorId}>{recipientError}</small>
+        )}
       </div>
 
       <div className="meta-row">
@@ -1436,8 +1599,10 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
           <button
             type="button"
             role="switch"
+            aria-label="Fast Transfer"
             aria-checked={speed === 'fast'}
             disabled={!source.supportsFast}
+            title={!source.supportsFast ? 'Fast transfer is not available on this source chain' : undefined}
             className={speed === 'fast' ? 'on' : ''}
             onClick={() => setSpeed(speed === 'fast' ? 'standard' : 'fast')}
           >
@@ -1446,7 +1611,16 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
         </label>
       </div>
 
-      {quote.error && <div className="error-message quote-error"><Info size={14} /><span>{quote.error}</span></div>}
+      {quoteIsCurrent && quoteCountdownLabel && (
+        <div className="quote-freshness" role="status">
+          <span>Quote valid for <strong>{quoteCountdownLabel}</strong></span>
+          <button type="button" className="quote-refresh" onClick={() => fetchQuote()}>
+            Refresh quote
+          </button>
+        </div>
+      )}
+
+      {quote.error && <div className="error-message quote-error" role="alert"><Info size={14} /><span>{quote.error}</span></div>}
       {wallet && (
         <div className="connected-row">
           <span><Wallet size={14} />Source · {shortAddress(wallet.address)}</span>
@@ -1488,7 +1662,7 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
                           ? 'Amount below fees'
                           : quote.status === 'loading'
                             ? 'Quoting…'
-                            : quote.data
+                            : quoteIsCurrent
                               ? 'Review transfer'
                               : 'Get quote'}
       </button>
@@ -1497,7 +1671,7 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
         <WalletModal
           chain={walletModal === 'destination' ? destination : source}
           environment={environment}
-          onClose={() => setWalletModal(false)}
+          onClose={() => setWalletModal(null)}
           onConnected={(connected) => {
             if (walletModal === 'destination') setDestinationWallet(connected)
             else setWallet(connected)
@@ -1515,6 +1689,11 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
             ? (transfer.result.destination?.useForwarder === true ? 'orbit' : 'manual')
             : settlementMode}
           phase={transfer.phase}
+          quoteCountdownLabel={transfer.phase === 'ready' ? quoteCountdownLabel : ''}
+          quoteStatus={quote.status}
+          quoteError={transfer.phase === 'ready' ? (quote.error || '') : ''}
+          quoteIsCurrent={quoteIsCurrent}
+          onRefreshQuote={transfer.phase === 'ready' ? () => fetchQuote() : null}
           error={transfer.error}
           warning={transfer.warning}
           result={transfer.result}
@@ -1526,7 +1705,7 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
           destinationSignerAddress={transfer.result?.destination?.address || claimWallet?.address || ''}
           recipient={transfer.result?.destination?.recipientAddress || recipient}
           feeCap={feeBreakdown.total}
-          receive={receive || '0'}
+          receive={receive != null ? receive : (quote.data ? '0' : '—')}
           routeVerified={routeVerified}
           onClose={() => setTransfer((current) => ({ ...current, open: false }))}
           onStart={() => startTransfer(false)}

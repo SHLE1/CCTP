@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
+  beginQuoteRefresh,
+  canStartTransferFromQuote,
   createBridgeResultDraft,
+  failQuoteRefresh,
   formatUsdcFromMicro,
   isAmountGreaterThanFee,
   isDestinationWalletCompatibleWithResult,
@@ -12,6 +15,7 @@ import {
   parseUsdcToMicro,
   quoteInputKey,
   quoteFeeBreakdown,
+  resolveAmountFieldError,
   safeExplorerUrl,
   sanitizeAmountInput,
   serializeBridgeResult,
@@ -161,6 +165,66 @@ describe('mainnet transfer safety invariants', () => {
     assert.equal(isQuoteFresh(1_000, 61_000, 60_000), false)
     assert.equal(isQuoteFresh(0, 1_000, 60_000), false)
     assert.equal(isQuoteFresh(2_000, 1_000, 60_000), false)
+  })
+
+  it('keeps prior quote data while refreshing and only allows Start when ready', () => {
+    const prior = {
+      status: 'ready',
+      data: { fees: [{ type: 'provider', amount: '0.1' }] },
+      error: '',
+      key: 'k1',
+      quotedAt: 1_000,
+    }
+    const loading = beginQuoteRefresh(prior, 'k1')
+    assert.equal(loading.status, 'loading')
+    assert.equal(loading.data, prior.data)
+    assert.equal(loading.quotedAt, 0)
+    assert.equal(loading.error, '')
+    assert.equal(canStartTransferFromQuote(loading.status, false), false)
+    assert.equal(canStartTransferFromQuote('ready', true), true)
+    assert.equal(canStartTransferFromQuote('ready', false), false)
+
+    const failed = failQuoteRefresh(loading, 'k1', 'RPC timed out')
+    assert.equal(failed.status, 'error')
+    assert.equal(failed.data, prior.data)
+    assert.equal(failed.error, 'RPC timed out')
+    assert.equal(failed.quotedAt, 0)
+    assert.equal(canStartTransferFromQuote(failed.status, false), false)
+
+    // Fee breakdown still works from retained payload during refresh/error.
+    assert.equal(quoteFeeBreakdown(loading.data).total, '0.1')
+    assert.equal(quoteFeeBreakdown(failed.data).total, '0.1')
+  })
+
+  it('resolves a single amount field error for aria-describedby', () => {
+    assert.equal(resolveAmountFieldError({
+      amount: '1',
+      amountError: '金额格式不正确（最多 6 位小数）',
+      balanceTooLow: true,
+      feeTooHigh: true,
+    }), '金额格式不正确（最多 6 位小数）')
+    assert.equal(resolveAmountFieldError({
+      amount: '1',
+      amountError: '',
+      balanceStatus: 'error',
+      balanceError: 'rpc down',
+      balanceTooLow: true,
+    }), 'rpc down')
+    assert.equal(resolveAmountFieldError({
+      amount: '1',
+      amountError: '',
+      balanceStatus: 'ready',
+      balanceTooLow: true,
+      feeTooHigh: true,
+    }), 'Amount exceeds USDC balance')
+    assert.equal(resolveAmountFieldError({
+      amount: '1',
+      amountError: '',
+      balanceStatus: 'ready',
+      balanceTooLow: false,
+      feeTooHigh: true,
+    }), 'Amount must be greater than all quoted USDC fees')
+    assert.equal(resolveAmountFieldError({}), '')
   })
 
   it('only renders HTTPS explorer links from persisted transfer data', () => {

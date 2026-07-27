@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-27T09:39:22Z",
+  "title": "Design System: Relay",
+  "extensions": {
+    "colorMeta": {
+      "primary": { "role": "primary", "displayName": "Violet Ink", "canonical": "#29233b" },
+      "primary-light": { "role": "primary", "displayName": "USDC Blue", "canonical": "#2775ca" },
+      "dark-primary": { "role": "primary", "displayName": "Mainnet Amber", "canonical": "#ff9401" },
+      "bg-light": { "role": "neutral", "displayName": "Cool Paper", "canonical": "#f8f9ff" },
+      "surface-light": { "role": "neutral", "displayName": "Lavender Surface", "canonical": "#eeeff7" },
+      "dark-bg": { "role": "neutral", "displayName": "Near Black", "canonical": "#0d0200" },
+      "danger-light": { "role": "semantic", "displayName": "Danger", "canonical": "#c2410c" },
+      "green-light": { "role": "semantic", "displayName": "Success", "canonical": "#059669" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Bridge card H1" },
+      "body": { "displayName": "Body", "purpose": "Subtitles, FAQ, helpers" },
+      "mono": { "displayName": "Mono", "purpose": "Addresses, codes, compact counts" }
+    },
+    "shadows": [
+      { "name": "ambient-light", "value": "0 16px 48px rgba(41, 35, 59, 0.08)", "purpose": "Bridge card and sheets in light theme" },
+      { "name": "ambient-dark", "value": "0 8px 24px rgba(0, 0, 0, 0.45)", "purpose": "Bridge card and sheets in dark theme" }
+    ],
+    "motion": [
+      { "name": "press-scale", "value": "transform 120ms cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Topbar tool active press" },
+      { "name": "toggle", "value": "background/transform 0.15s ease", "purpose": "Fast transfer toggle" },
+      { "name": "spin", "value": "spin 0.9s linear infinite", "purpose": "Loading spinner" }
+    ],
+    "breakpoints": [
+      { "name": "narrow", "value": "560px" },
+      { "name": "tablet", "value": "900px" },
+      { "name": "min-width", "value": "320px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Full-width transfer CTA using theme --btn tokens.",
+      "html": "<button class=\"ds-btn-primary\" type=\"button\">Continue</button>",
+      "css": ".ds-btn-primary { width: 100%; height: 56px; border: 0; border-radius: 1rem; background: #29233b; color: #fff; font: 700 16px ui-sans-serif, system-ui, sans-serif; letter-spacing: -0.01em; display: flex; align-items: center; justify-content: center; gap: 8px; } .ds-btn-primary:hover:not(:disabled) { opacity: 0.92; } .ds-btn-primary:disabled { opacity: 0.4; cursor: not-allowed; } .ds-btn-primary:focus-visible { outline: 2px solid #2775ca; outline-offset: 2px; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Secondary pill action (Resume, tools).",
+      "html": "<button class=\"ds-btn-ghost\" type=\"button\">Resume transfer</button>",
+      "css": ".ds-btn-ghost { height: 34px; padding: 0 14px; border-radius: 999px; border: 1px solid #dbdeec; background: #fff; color: #29233b; font: 600 12px ui-sans-serif, system-ui, sans-serif; } .ds-btn-ghost:hover { opacity: 0.88; } .ds-btn-ghost:focus-visible { outline: 2px solid #2a4f8a; outline-offset: 2px; }"
+    },
+    {
+      "name": "Bridge Card",
+      "kind": "card",
+      "refersTo": "card-bridge",
+      "description": "Primary transfer surface.",
+      "html": "<section class=\"ds-bridge-card\"><h1>Transfer USDC</h1><p>Native CCTP mainnet</p></section>",
+      "css": ".ds-bridge-card { width: min(540px, 100%); background: #eeeff7; border: 1px solid #dbdeec; border-radius: 2rem; padding: 28px; box-shadow: 0 16px 48px rgba(41, 35, 59, 0.08); color: #29233b; font-family: ui-sans-serif, system-ui, sans-serif; } .ds-bridge-card h1 { margin: 0; font-size: 1.75rem; font-weight: 700; letter-spacing: -0.03em; line-height: 1.15; } .ds-bridge-card p { margin: 6px 0 0; font-size: 0.9rem; color: #664e4d; }"
+    },
+    {
+      "name": "Field Input",
+      "kind": "input",
+      "refersTo": "field-input",
+      "description": "Recipient / chain-style field chrome.",
+      "html": "<label class=\"ds-field\"><span>Recipient</span><input type=\"text\" placeholder=\"0x… or Solana address\" /></label>",
+      "css": ".ds-field { display: grid; gap: 8px; font: 600 13px ui-sans-serif, system-ui, sans-serif; color: #29233b; } .ds-field input { height: 52px; border: 1px solid #dbdeec; border-radius: 1rem; background: #fff; padding: 0 16px; font: 13px ui-monospace, SF Mono, Menlo, monospace; color: #29233b; } .ds-field input:focus { outline: none; border-color: #c8ccd9; } .ds-field input:focus-visible { outline: 2px solid #2a4f8a; outline-offset: 2px; }"
+    },
+    {
+      "name": "Info Pill",
+      "kind": "chip",
+      "refersTo": "pill-info",
+      "description": "Meta chips (Mainnet, ETA, mode).",
+      "html": "<span class=\"ds-pill\">Mainnet</span>",
+      "css": ".ds-pill { display: inline-flex; align-items: center; height: 28px; padding: 0 11px; border-radius: 10px; background: #dce6f8; color: #2a4f8a; font: 600 12px ui-sans-serif, system-ui, sans-serif; white-space: nowrap; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Mainnet Console",
+    "overview": "Relay’s UI is a task-first bridge console: a single high-radius card centered on cool paper, with system sans type, monospaced addresses, and chain marks. Light mode is lavender-tinted paper and violet ink; dark mode is near-black with a warm amber accent for primary actions and borders. Expression lives in density, status clarity, and honest mainnet warnings—not in marketing illustration.",
+    "keyCharacteristics": [
+      "Dual theme: cool paper + violet (light) / near-black + amber (dark)",
+      "High-radius surfaces for the bridge card and sheets",
+      "Centered operate layout with history and FAQ below",
+      "Token-driven CSS variables",
+      "System UI font stack; mono for addresses"
+    ],
+    "rules": [
+      { "name": "The Token Surface Rule", "body": "Prefer semantic vars over raw hex in components so light/dark stay coherent.", "section": "colors" },
+      { "name": "The One Accent Rule", "body": "Light uses violet/blue action accent; dark uses amber for primary CTA. Do not add a third accent family without tokens.", "section": "colors" },
+      { "name": "The System Stack Rule", "body": "Stay on platform fonts; do not add marketing webfonts without intent.", "section": "typography" },
+      { "name": "The Single Card Rule", "body": "Transfer task lives in one elevated card; supporting tools sit below.", "section": "layout" },
+      { "name": "The Quiet Lift Rule", "body": "No multi-layer glass stacks; elevation reserved for card and modal sheet.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do use CSS variables for any new control so both themes inherit.",
+      "Do keep the bridge card as the single primary focus above the fold on desktop.",
+      "Do show mainnet risk, fee breakdown, and progress persistence messaging near high-stakes actions.",
+      "Do pair chain icons with text labels; never rely on color alone for chain identity."
+    ],
+    "donts": [
+      "Don't introduce indigo–violet marketing gradients or glassmorphism stacks.",
+      "Don't hard-code light-only hex in new components.",
+      "Don't add interface fee claims or official Circle branding not in product truth.",
+      "Don't remove resume/progress affordances for visual minimalism."
+    ]
+  }
+}

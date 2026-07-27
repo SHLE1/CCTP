@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "impeccable": {
+      "source": "pbakaus/impeccable",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/impeccable/SKILL.md",
+      "computedHash": "76e374fd0acb10959d8cb3375e9682f1681ba72d069cdf7d253c0c53293aeed7"
+    },
     "kill-ai-slop": {
       "source": "yetone/kill-ai-slop",
       "sourceType": "github",
