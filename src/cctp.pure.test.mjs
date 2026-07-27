@@ -514,7 +514,14 @@ describe('mainnet transfer safety invariants', () => {
       }, '0x1111111111111111111111111111111111111111')
 
       assert.equal(persistTransfer(draft, 'testnet'), true)
-      assert.equal(loadTransferHistory('testnet').length, 1)
+      assert.equal(loadTransferHistory('testnet').length, 0)
+
+      assert.equal(persistTransfer({
+        ...draft,
+        state: 'error',
+        steps: [{ name: 'approve', state: 'error', errorMessage: 'User rejected' }],
+      }, 'testnet'), true)
+      assert.equal(loadTransferHistory('testnet').length, 0)
 
       const completed = {
         ...draft,
@@ -534,6 +541,22 @@ describe('mainnet transfer safety invariants', () => {
       assert.equal(history[0].sourceId, 'base')
       assert.equal(history[0].destinationId, 'solana')
       assert.equal(history[0].explorerLinks[0].url, 'https://sepolia.basescan.org/tx/0xabc')
+
+      assert.equal(persistTransfer({
+        ...draft,
+        amount: '13',
+        state: 'error',
+        steps: [{
+          name: 'burn',
+          state: 'error',
+          txHash: '0xfailed',
+          errorCategory: 'chain_revert',
+        }],
+      }, 'testnet'), true)
+      const withOnChainFailure = loadTransferHistory('testnet')
+      assert.equal(withOnChainFailure.length, 2)
+      assert.equal(withOnChainFailure[0].state, 'error')
+      assert.equal(withOnChainFailure[0].retryable, false)
     } finally {
       if (previousStorageDescriptor) {
         Object.defineProperty(globalThis, 'localStorage', previousStorageDescriptor)

@@ -828,6 +828,10 @@ function historyRecordFromResult(result, environment, existing = null, updatedAt
     .map((step) => String(step?.txHash || '').trim())
     .filter(Boolean)
     .slice(0, 8)
+  const explorerLinks = historyExplorerLinks(result)
+  const retryable = isRetryableBridgeResult(result)
+  const hasChainEvidence = txHashes.length > 0 || explorerLinks.length > 0
+  if (result.state !== 'success' && !retryable && !hasChainEvidence) return null
   return {
     id: existing?.id || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`,
     environment,
@@ -838,8 +842,8 @@ function historyRecordFromResult(result, environment, existing = null, updatedAt
     amount: String(result.amount || '').slice(0, 80),
     sourceId,
     destinationId,
-    retryable: isRetryableBridgeResult(result),
-    explorerLinks: historyExplorerLinks(result),
+    retryable,
+    explorerLinks,
     txHashes,
   }
 }
@@ -859,6 +863,15 @@ function readTransferHistory(environment) {
       && typeof item.sourceId === 'string'
       && typeof item.destinationId === 'string'
       && ['success', 'pending', 'error'].includes(item.state)
+      && (
+        item.state === 'success'
+        || item.retryable === true
+        || (Array.isArray(item.txHashes) && item.txHashes.length > 0)
+        || (
+          Array.isArray(item.explorerLinks)
+          && item.explorerLinks.some((link) => safeExplorerUrl(link?.url))
+        )
+      )
     )).slice(0, TRANSFER_HISTORY_LIMIT)
   } catch {
     return []

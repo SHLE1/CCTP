@@ -11,6 +11,7 @@ import {
   CircleCheck,
   Clock3,
   ExternalLink,
+  Filter,
   Info,
   LoaderCircle,
   Moon,
@@ -1601,14 +1602,20 @@ function formatHistoryDate(value) {
   }).format(date).replace(',', '')
 }
 
-function HistoryStatus({ state }) {
+function HistoryStatus({ state, retryable, canResume }) {
   if (state === 'success') {
     return <span className="history-status success"><CircleCheck size={17} />Fulfilled</span>
   }
-  if (state === 'error') {
-    return <span className="history-status error"><CircleAlert size={17} />Needs attention</span>
+  if (state === 'error' && canResume) {
+    return <span className="history-status action"><CircleAlert size={17} />Action required</span>
   }
-  return <span className="history-status pending"><Clock3 size={17} />Processing</span>
+  if (state === 'error' && retryable) {
+    return <span className="history-status action"><CircleAlert size={17} />Interrupted</span>
+  }
+  if (state === 'error') {
+    return <span className="history-status error"><CircleAlert size={17} />Failed</span>
+  }
+  return <span className="history-status pending"><Clock3 size={17} />In progress</span>
 }
 
 function HistoryChain({ chains, chainId }) {
@@ -1627,7 +1634,7 @@ function HistoryChain({ chains, chainId }) {
 
 function TransactionLinks({ links }) {
   const safeLinks = (links || []).filter((item) => safeExplorerUrl(item?.url))
-  if (!safeLinks.length) return <span className="history-action-muted">Pending</span>
+  if (!safeLinks.length) return <span className="history-action-muted">Explorer unavailable</span>
   if (safeLinks.length === 1) {
     return (
       <a
@@ -1662,6 +1669,10 @@ function TransactionLinks({ links }) {
 
 function TransferHistory({ environment, chains, onResume }) {
   const [records, setRecords] = useState(() => loadTransferHistory(environment))
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [sourceFilter, setSourceFilter] = useState('all')
+  const [destinationFilter, setDestinationFilter] = useState('all')
+  const [timeFilter, setTimeFilter] = useState('all')
 
   useEffect(() => {
     const refresh = (event) => {
@@ -1670,9 +1681,62 @@ function TransferHistory({ environment, chains, onResume }) {
       }
     }
     refresh()
+    setStatusFilter('all')
+    setSourceFilter('all')
+    setDestinationFilter('all')
+    setTimeFilter('all')
     window.addEventListener('relay:transfer-history-updated', refresh)
     return () => window.removeEventListener('relay:transfer-history-updated', refresh)
   }, [environment])
+
+  const statusCounts = useMemo(() => records.reduce((counts, record) => {
+    counts.all += 1
+    if (record.state === 'success') counts.success += 1
+    else if (record.state === 'pending' || record.retryable) counts.open += 1
+    else counts.failed += 1
+    return counts
+  }, { all: 0, success: 0, open: 0, failed: 0 }), [records])
+
+  const filteredRecords = useMemo(() => {
+    const timeWindow = {
+      '24h': 24 * 60 * 60 * 1000,
+      '7d': 7 * 24 * 60 * 60 * 1000,
+      '30d': 30 * 24 * 60 * 60 * 1000,
+    }[timeFilter]
+    const cutoff = timeWindow ? Date.now() - timeWindow : null
+    return records.filter((record) => {
+      const statusMatches = statusFilter === 'all'
+        || (statusFilter === 'success' && record.state === 'success')
+        || (statusFilter === 'open' && (record.state === 'pending' || record.retryable))
+        || (statusFilter === 'failed' && record.state === 'error' && !record.retryable)
+      const sourceMatches = sourceFilter === 'all' || record.sourceId === sourceFilter
+      const destinationMatches = destinationFilter === 'all'
+        || record.destinationId === destinationFilter
+      const timeMatches = cutoff == null || new Date(record.createdAt).getTime() >= cutoff
+      return statusMatches && sourceMatches && destinationMatches && timeMatches
+    })
+  }, [destinationFilter, records, sourceFilter, statusFilter, timeFilter])
+
+  const secondaryFilterCount = [
+    sourceFilter !== 'all',
+    destinationFilter !== 'all',
+    timeFilter !== 'all',
+  ].filter(Boolean).length
+  const hasAnyFilter = statusFilter !== 'all' || secondaryFilterCount > 0
+
+  function clearFilters() {
+    setStatusFilter('all')
+    setSourceFilter('all')
+    setDestinationFilter('all')
+    setTimeFilter('all')
+  }
+
+  const statusOptions = [
+    { id: 'all', label: 'All', count: statusCounts.all },
+    { id: 'success', label: 'Completed', count: statusCounts.success },
+    { id: 'open', label: 'Open', count: statusCounts.open },
+    { id: 'failed', label: 'Failed', count: statusCounts.failed },
+  ]
 
   return (
     <section className="history-section" aria-labelledby="history-title">
@@ -1685,7 +1749,66 @@ function TransferHistory({ environment, chains, onResume }) {
       </div>
 
       {records.length ? (
-        <div className="history-table" role="table" aria-label={`${ENVIRONMENT_LABELS[environment]} transfer history`}>
+        <>
+          <div className="history-toolbar">
+            <div className="history-quick-filters" role="tablist" aria-label="Filter transfers by status">
+              {statusOptions.map((option) => (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={statusFilter === option.id}
+                  className={statusFilter === option.id ? 'active' : ''}
+                  onClick={() => setStatusFilter(option.id)}
+                  key={option.id}
+                >
+                  {option.label}
+                  <span>{option.count}</span>
+                </button>
+              ))}
+            </div>
+
+            <details className="history-filter-menu">
+              <summary>
+                <Filter size={14} />
+                Filters
+                {secondaryFilterCount > 0 && <span>{secondaryFilterCount}</span>}
+              </summary>
+              <div className="history-filter-popover">
+                <div className="history-filter-popover-head">
+                  <strong>Filter transfers</strong>
+                  <button type="button" onClick={clearFilters} disabled={!hasAnyFilter}>
+                    Clear
+                  </button>
+                </div>
+                <label>
+                  <span>Source chain</span>
+                  <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}>
+                    <option value="all">All source chains</option>
+                    {chains.map((chain) => <option value={chain.id} key={chain.id}>{chain.name}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>Destination chain</span>
+                  <select value={destinationFilter} onChange={(event) => setDestinationFilter(event.target.value)}>
+                    <option value="all">All destination chains</option>
+                    {chains.map((chain) => <option value={chain.id} key={chain.id}>{chain.name}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>Time</span>
+                  <select value={timeFilter} onChange={(event) => setTimeFilter(event.target.value)}>
+                    <option value="all">Any time</option>
+                    <option value="24h">Last 24 hours</option>
+                    <option value="7d">Last 7 days</option>
+                    <option value="30d">Last 30 days</option>
+                  </select>
+                </label>
+              </div>
+            </details>
+          </div>
+
+          {filteredRecords.length ? (
+            <div className="history-table" role="table" aria-label={`${ENVIRONMENT_LABELS[environment]} transfer history`}>
           <div className="history-table-head" role="row">
             <span role="columnheader">Time</span>
             <span role="columnheader">Source</span>
@@ -1695,7 +1818,7 @@ function TransferHistory({ environment, chains, onResume }) {
             <span role="columnheader" aria-label="Actions" />
           </div>
           <div className="history-table-body" role="rowgroup">
-            {records.map((record, index) => (
+            {filteredRecords.map((record) => (
               <div className="history-row" role="row" key={record.id}>
                 <time role="cell" dateTime={record.createdAt} data-label="Time">
                   {formatHistoryDate(record.createdAt)}
@@ -1711,10 +1834,14 @@ function TransferHistory({ environment, chains, onResume }) {
                   <img src={USDC_ICON} alt="USDC" width="18" height="18" />
                 </span>
                 <span role="cell" data-label="Status">
-                  <HistoryStatus state={record.state} />
+                  <HistoryStatus
+                    state={record.state}
+                    retryable={record.retryable}
+                    canResume={record.id === records[0]?.id && record.retryable}
+                  />
                 </span>
                 <span className="history-actions" role="cell">
-                  {index === 0 && record.retryable && (
+                  {record.id === records[0]?.id && record.retryable && (
                     <button type="button" className="history-action secondary" onClick={onResume}>
                       Resume
                     </button>
@@ -1724,13 +1851,24 @@ function TransferHistory({ environment, chains, onResume }) {
               </div>
             ))}
           </div>
-        </div>
+            </div>
+          ) : (
+            <div className="history-empty filtered">
+              <Filter size={21} />
+              <div>
+                <strong>No matching transfers</strong>
+                <p>Try another status, chain, or time range.</p>
+              </div>
+              <button type="button" onClick={clearFilters}>Clear filters</button>
+            </div>
+          )}
+        </>
       ) : (
         <div className="history-empty">
           <Clock3 size={21} />
           <div>
-            <strong>No transfers yet</strong>
-            <p>Your completed and resumable {ENVIRONMENT_LABELS[environment]} transfers will appear here.</p>
+            <strong>No on-chain transfers yet</strong>
+            <p>Completed and recoverable {ENVIRONMENT_LABELS[environment]} transfers will appear here.</p>
           </div>
         </div>
       )}
