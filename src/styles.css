@@ -247,7 +247,7 @@ main {
   padding: 24px 16px 48px;
   gap: 16px;
   position: relative;
-  z-index: 1;
+  /* Keep fixed dialogs in the root stacking context so their backdrop covers the topbar. */
   width: 100%;
 }
 
