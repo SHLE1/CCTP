@@ -60,6 +60,7 @@ import {
   validateTransferEstimate,
 } from './cctp'
 import '@solana/wallet-adapter-react-ui/styles.css'
+import LookupTableManager from './LookupTableManager.jsx'
 import './styles.css'
 
 // Chain icons: Trust Wallet / DefiLlama; USDC: Circle asset via Trust Wallet
@@ -1958,6 +1959,8 @@ function App({ environment, setEnvironment }) {
             document.getElementById('bridge')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
           }}
         />
+
+        <LookupTableManager environment={environment} />
 
         <section className="faq" aria-label="Frequently asked questions">
           <h2>FAQ</h2>

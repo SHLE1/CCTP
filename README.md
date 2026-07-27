@@ -26,6 +26,7 @@ Build the production bundle with `pnpm build`. Run pure unit tests with `pnpm te
 - Fast and Standard transfer modes (driven by Bridge Kit `fastConfirmations`)
 - Step-by-step `BridgeResult` persistence for in-browser resume + `kit.retry` (forwarder-safe)
 - Transaction explorer links and beforeunload protection while a transfer is in flight
+- Solana Lookup Table authority scanning, exact cooldown tracking, two-stage deactivate/close signing, and rent recovery
 
 ## Networks
 
