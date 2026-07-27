@@ -188,6 +188,7 @@ function ConfirmationDialog({ action, busy, confirmed, onCancel, onConfirm, onCo
 export default function LookupTableManager({ environment, onClose }) {
   const { connection } = useConnection()
   const {
+    connect,
     connected,
     connecting,
     publicKey,
@@ -199,6 +200,14 @@ export default function LookupTableManager({ environment, onClose }) {
   const [confirmed, setConfirmed] = useState(false)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState(null)
+
+  useEffect(() => {
+    if (!wallet?.adapter || connected || connecting) return
+    setNotice(null)
+    connect().catch((error) => {
+      setNotice({ type: 'error', message: friendlyError(error) })
+    })
+  }, [connect, connected, connecting, wallet])
 
   function requestClose() {
     if (busy || pendingAction) return
@@ -345,6 +354,14 @@ export default function LookupTableManager({ environment, onClose }) {
         </div>
       </div>
 
+      {notice && (
+        <div className={`lookup-notice ${notice.type}`} role={notice.type === 'error' ? 'alert' : 'status'}>
+          {notice.type === 'success' ? <CircleCheck size={17} /> : <CircleAlert size={17} />}
+          <span>{notice.message}</span>
+          {notice.url && <a href={notice.url} target="_blank" rel="noreferrer">View transaction <ExternalLink size={12} /></a>}
+        </div>
+      )}
+
       {!connected || !publicKey ? (
         <div className="lookup-empty connect">
           <span className="lookup-empty-icon"><Database size={22} /></span>
@@ -364,14 +381,6 @@ export default function LookupTableManager({ environment, onClose }) {
             <div><span>Ready to close</span><strong>{summary.ready}</strong></div>
             <div className="lookup-summary-total"><span>Recoverable</span><strong>{summary.totalSol} SOL</strong></div>
           </div>
-
-          {notice && (
-            <div className={`lookup-notice ${notice.type}`} role={notice.type === 'error' ? 'alert' : 'status'}>
-              {notice.type === 'success' ? <CircleCheck size={17} /> : <CircleAlert size={17} />}
-              <span>{notice.message}</span>
-              {notice.url && <a href={notice.url} target="_blank" rel="noreferrer">View transaction <ExternalLink size={12} /></a>}
-            </div>
-          )}
 
           {scan.status === 'loading' && !scan.tables.length && (
             <div className="lookup-empty loading">
