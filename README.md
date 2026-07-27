@@ -13,7 +13,10 @@ Build the production bundle with `pnpm build`. Run pure unit tests with `pnpm te
 
 ## Included
 
-- Solana and EVM mainnet route selection, including Sonic
+- All 23 USDC mainnets currently exported by Circle Bridge Kit: Arbitrum,
+  Avalanche, Base, Codex, Cronos, EDGE, Ethereum, HyperEVM, Injective, Ink,
+  Linea, Monad, Morph, OP Mainnet, Pharos, Plume, Polygon PoS, Sei, Solana,
+  Sonic, Unichain, World Chain, and XDC
 - Wallet Standard auto-discovery for Solana wallets such as Backpack, Phantom and Solflare
 - EIP-6963 EVM wallet discovery for explicit MetaMask, Rabby, and Coinbase Wallet selection (with legacy fallback and account/chain change disconnect)
 - Self-claim mode with destination-wallet mint signing, no Orbit fee, destination gas preflight, and automatic Solana ATA creation
@@ -22,7 +25,10 @@ Build the production bundle with `pnpm build`. Run pure unit tests with `pnpm te
 - Canonical source-account USDC balance preflight and 6-decimal amount validation
 - Solana destination ATA preflight (Self-claim can create a missing ATA; Orbit requires an existing ATA)
 - Real CCTP V2 mainnet burn → attest → mint execution
-- Fast and Standard transfer modes (driven by Bridge Kit `fastConfirmations`)
+- Fast and Standard transfer modes, enabled per source chain from Circle's
+  capability matrix and validated against Bridge Kit definitions
+- Per-destination Forwarding Service capability checks; unsupported Orbit
+  destinations automatically remain in Self-claim mode
 - Step-by-step `BridgeResult` persistence for in-browser resume + `kit.retry` (forwarder-safe)
 - Transaction explorer links and beforeunload protection while a transfer is in flight
 - Solana Lookup Table authority scanning, exact cooldown tracking, two-stage deactivate/close signing, and rent recovery

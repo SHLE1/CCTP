@@ -6,18 +6,46 @@ import {
   AvalancheFuji,
   Base,
   BaseSepolia,
+  Codex,
+  CodexTestnet,
+  Cronos,
+  CronosTestnet,
+  Edge,
+  EdgeTestnet,
   Ethereum,
   EthereumSepolia,
+  HyperEVM,
+  HyperEVMTestnet,
+  Injective,
+  InjectiveTestnet,
+  Ink,
+  InkTestnet,
+  Linea,
+  LineaSepolia,
+  Monad,
+  MonadTestnet,
+  Morph,
+  MorphTestnet,
   Optimism,
   OptimismSepolia,
+  Pharos,
+  PharosTestnet,
+  Plume,
+  PlumeTestnet,
   Polygon,
   PolygonAmoy,
+  Sei,
+  SeiTestnet,
   Solana,
   SolanaDevnet,
   Sonic,
   SonicTestnet,
   Unichain,
   UnichainSepolia,
+  WorldChain,
+  WorldChainSepolia,
+  XDC,
+  XDCApothem,
 } from '@circle-fin/bridge-kit/chains'
 import { createViemAdapterFromProvider } from '@circle-fin/adapter-viem-v2'
 import { createSolanaAdapterFromProvider } from '@circle-fin/adapter-solana'
@@ -74,6 +102,20 @@ const DEFINITIONS = {
     unichain: Unichain,
     sonic: Sonic,
     solana: Solana,
+    codex: Codex,
+    cronos: Cronos,
+    edge: Edge,
+    hyperevm: HyperEVM,
+    injective: Injective,
+    ink: Ink,
+    linea: Linea,
+    monad: Monad,
+    morph: Morph,
+    pharos: Pharos,
+    plume: Plume,
+    sei: Sei,
+    worldchain: WorldChain,
+    xdc: XDC,
   },
   testnet: {
     ethereum: EthereumSepolia,
@@ -85,6 +127,20 @@ const DEFINITIONS = {
     unichain: UnichainSepolia,
     sonic: SonicTestnet,
     solana: SolanaDevnet,
+    codex: CodexTestnet,
+    cronos: CronosTestnet,
+    edge: EdgeTestnet,
+    hyperevm: HyperEVMTestnet,
+    injective: InjectiveTestnet,
+    ink: InkTestnet,
+    linea: LineaSepolia,
+    monad: MonadTestnet,
+    morph: MorphTestnet,
+    pharos: PharosTestnet,
+    plume: PlumeTestnet,
+    sei: SeiTestnet,
+    worldchain: WorldChainSepolia,
+    xdc: XDCApothem,
   },
 }
 
@@ -98,6 +154,24 @@ const kit = new BridgeKit({ disableErrorReporting: true })
 const EVM_ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 const SOLANA_TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA')
 const SOLANA_ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
+// Circle marks Fast Transfer available only where it materially improves
+// attestation time. Polygon is one example where Bridge Kit exposes a lower
+// fastConfirmations value but the public capability matrix still marks Fast N/A.
+const FAST_TRANSFER_CHAIN_IDS = new Set([
+  'arbitrum',
+  'base',
+  'codex',
+  'edge',
+  'ethereum',
+  'ink',
+  'linea',
+  'morph',
+  'optimism',
+  'plume',
+  'solana',
+  'unichain',
+  'worldchain',
+])
 
 function assertEnvironment(environment) {
   if (!DEFINITIONS[environment]) throw new Error(`Unsupported environment: ${environment}`)
@@ -127,10 +201,21 @@ export function findChainIdForDefinition(environment, chain) {
   return match?.[0] || null
 }
 
-/** CCTP v2 Fast Transfer is available when the chain exposes fastConfirmations. */
+/**
+ * Bridge Kit exposes technical fastConfirmations values for every v2 chain,
+ * including chains Circle marks Fast Transfer N/A. Keep the product capability
+ * aligned with Circle's public matrix and verify the SDK definition still
+ * contains a fast threshold.
+ */
 export function supportsFastTransfer(environment, chainId) {
   const definition = getDefinition(environment, chainId)
-  return definition?.cctp?.contracts?.v2?.fastConfirmations != null
+  return FAST_TRANSFER_CHAIN_IDS.has(chainId)
+    && Number.isFinite(definition?.cctp?.contracts?.v2?.fastConfirmations)
+}
+
+export function supportsForwarderDestination(environment, chainId) {
+  const definition = getDefinition(environment, chainId)
+  return definition?.cctp?.forwarderSupported?.destination === true
 }
 
 export function getSolanaRpcEndpoint(environment) {
@@ -188,7 +273,9 @@ async function switchEvmChain(definition, provider = window.ethereum) {
     await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId }] })
   } catch (error) {
     if (error?.code !== 4902 && !String(error?.message).includes('Unrecognized chain')) throw error
-    const explorer = definition.explorerUrl?.split('/tx/')[0]
+    const explorer = definition.explorerUrl
+      ?.replace(/\/(?:tx|transaction)\/\{hash\}.*$/i, '')
+      ?.replace(/\/+$/, '')
     await provider.request({
       method: 'wallet_addEthereumChain',
       params: [{

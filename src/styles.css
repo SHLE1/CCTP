@@ -637,6 +637,11 @@ summary:focus-visible,
   text-align: left;
 }
 .settlement-panel > button:hover { border-color: var(--border-strong); }
+.settlement-panel > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.settlement-panel > button:disabled:hover { border-color: var(--border); }
 .settlement-panel > button.active {
   border-color: var(--pill-fg);
   background: var(--pill-bg);

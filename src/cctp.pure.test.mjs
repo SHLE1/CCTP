@@ -30,13 +30,66 @@ import {
   findChainIdForDefinition,
   getDefinition,
   isTransferStorageAvailable,
+  listChainIds,
   loadTransferHistory,
   normalizeRetryResult,
   persistTransfer,
+  supportsFastTransfer,
+  supportsForwarderDestination,
   switchConnectedEvmWallet,
   validateRecipient,
   validateTransferEstimate,
 } from './cctp.js'
+
+describe('Bridge Kit chain coverage', () => {
+  const supportedMainnets = [
+    'arbitrum',
+    'avalanche',
+    'base',
+    'codex',
+    'cronos',
+    'edge',
+    'ethereum',
+    'hyperevm',
+    'injective',
+    'ink',
+    'linea',
+    'monad',
+    'morph',
+    'optimism',
+    'pharos',
+    'plume',
+    'polygon',
+    'sei',
+    'solana',
+    'sonic',
+    'unichain',
+    'worldchain',
+    'xdc',
+  ]
+
+  it('includes every USDC mainnet exported by Bridge Kit', () => {
+    assert.deepEqual([...listChainIds('mainnet')].sort(), supportedMainnets)
+    assert.deepEqual([...listChainIds('testnet')].sort(), supportedMainnets)
+    for (const environment of ['mainnet', 'testnet']) {
+      for (const chainId of supportedMainnets) {
+        assert.ok(getDefinition(environment, chainId).cctp?.contracts?.v2)
+      }
+    }
+  })
+
+  it('uses Circle public capability rules to expose Fast Transfer', () => {
+    assert.equal(supportsFastTransfer('mainnet', 'base'), true)
+    assert.equal(supportsFastTransfer('mainnet', 'avalanche'), false)
+    assert.equal(supportsFastTransfer('mainnet', 'polygon'), false)
+  })
+
+  it('exposes destination Forwarding Service availability', () => {
+    assert.equal(supportsForwarderDestination('mainnet', 'linea'), true)
+    assert.equal(supportsForwarderDestination('mainnet', 'cronos'), false)
+    assert.equal(supportsForwarderDestination('mainnet', 'injective'), false)
+  })
+})
 
 describe('USDC amount helpers', () => {
   it('parses and formats micro-USDC without float drift', () => {
@@ -453,6 +506,40 @@ describe('mainnet transfer safety invariants', () => {
       'eth_accounts',
     ])
     assert.equal(calls.some((call) => call.method === 'eth_requestAccounts'), false)
+  })
+
+  it('adds newly supported EVM chains with a wallet-safe explorer URL', async () => {
+    const calls = []
+    const provider = {
+      async request(request) {
+        calls.push(request)
+        if (request.method === 'eth_chainId') return '0x1'
+        if (request.method === 'wallet_switchEthereumChain') {
+          const error = new Error('Unrecognized chain')
+          error.code = 4902
+          throw error
+        }
+        if (request.method === 'wallet_addEthereumChain') return null
+        if (request.method === 'eth_accounts') {
+          return ['0x1234567890123456789012345678901234567890']
+        }
+        throw new Error(`unexpected method: ${request.method}`)
+      },
+    }
+    const wallet = {
+      address: '0x1234567890123456789012345678901234567890',
+      family: 'evm',
+      provider,
+      chainId: 1,
+    }
+
+    const switched = await switchConnectedEvmWallet('mainnet', 'injective', wallet)
+    const addChainCall = calls.find((call) => call.method === 'wallet_addEthereumChain')
+
+    assert.equal(switched.chainId, 1776)
+    assert.equal(addChainCall.params[0].chainId, '0x6f0')
+    assert.deepEqual(addChainCall.params[0].blockExplorerUrls, ['https://injscan.com'])
+    assert.equal(addChainCall.params[0].rpcUrls[0], 'https://sentry.evm-rpc.injective.network')
   })
 
   it('requires a buffered source gas balance and complete gas estimates', async () => {

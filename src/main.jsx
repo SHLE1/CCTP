@@ -60,6 +60,7 @@ import {
   subtractUsdcAmounts,
   subscribeEvmProviders,
   supportsFastTransfer,
+  supportsForwarderDestination,
   switchConnectedEvmWallet,
   usesPublicSolanaRpc,
   validateAmount,
@@ -70,18 +71,32 @@ import '@solana/wallet-adapter-react-ui/styles.css'
 import LookupTableManager from './LookupTableManager.jsx'
 import './styles.css'
 
-// Chain icons: Trust Wallet / DefiLlama; USDC: Circle asset via Trust Wallet
-// supportsFast is resolved at runtime from Bridge Kit chain defs (CCTP v2 fastConfirmations).
+// Chain icons: Trust Wallet / DefiLlama; USDC: Circle asset via Trust Wallet.
+// Capability flags use Circle's public matrix plus Bridge Kit chain definitions.
 const CHAIN_META = {
-  ethereum: { family: 'evm', icon: '/icons/ethereum.png', color: '#627EEA', eta: '14–19 min' },
-  base: { family: 'evm', icon: '/icons/base.png', color: '#0052FF', eta: '4–7 min' },
-  arbitrum: { family: 'evm', icon: '/icons/arbitrum.png', color: '#28A0F0', eta: '4–7 min' },
-  optimism: { family: 'evm', icon: '/icons/optimism.png', color: '#FF0420', eta: '4–7 min' },
-  avalanche: { family: 'evm', icon: '/icons/avalanche.png', color: '#E84142', eta: '4–7 min' },
-  polygon: { family: 'evm', icon: '/icons/polygon.png', color: '#8247E5', eta: '8–12 min' },
-  unichain: { family: 'evm', icon: '/icons/unichain.png', color: '#FF2D8D', eta: '4–7 min' },
-  sonic: { family: 'evm', icon: '/icons/sonic.png', color: '#2563EB', eta: '4–7 min' },
-  solana: { family: 'solana', icon: '/icons/solana.png', color: '#9945FF', eta: '8–12 sec' },
+  ethereum: { family: 'evm', icon: '/icons/ethereum.png', color: '#627EEA', eta: '~15–19 min', fastEta: '~20 sec' },
+  arbitrum: { family: 'evm', icon: '/icons/arbitrum.png', color: '#28A0F0', eta: '~15–19 min', fastEta: '~8 sec' },
+  avalanche: { family: 'evm', icon: '/icons/avalanche.png', color: '#E84142', eta: '~8 sec' },
+  base: { family: 'evm', icon: '/icons/base.png', color: '#0052FF', eta: '~15–19 min', fastEta: '~8 sec' },
+  codex: { family: 'evm', icon: '/icons/codex.webp', color: '#20242C', eta: '~15–19 min', fastEta: '~8 sec' },
+  cronos: { family: 'evm', icon: '/icons/cronos.webp', color: '#002D74', eta: '~0.5 sec' },
+  edge: { family: 'evm', color: '#16181D', eta: '~16–21 min', fastEta: '~8 sec' },
+  hyperevm: { family: 'evm', icon: '/icons/hyperevm.webp', color: '#2C7468', eta: '~5 sec' },
+  injective: { family: 'evm', icon: '/icons/injective.webp', color: '#0082C9', eta: '~0.65 sec' },
+  ink: { family: 'evm', icon: '/icons/ink.webp', color: '#7132F5', eta: '~30 min', fastEta: '~8 sec' },
+  linea: { family: 'evm', icon: '/icons/linea.webp', color: '#1F9DC0', eta: '~6–32 hr', fastEta: '~8 sec' },
+  monad: { family: 'evm', icon: '/icons/monad.webp', color: '#836EF9', eta: '~5 sec' },
+  morph: { family: 'evm', icon: '/icons/morph.webp', color: '#168CA8', eta: '~20–30 min', fastEta: '~8 sec' },
+  optimism: { family: 'evm', icon: '/icons/optimism.png', color: '#FF0420', eta: '~15–19 min', fastEta: '~8 sec' },
+  pharos: { family: 'evm', icon: '/icons/pharos.webp', color: '#D97706', eta: '~7 sec' },
+  plume: { family: 'evm', icon: '/icons/plume.webp', color: '#EA580C', eta: '~15–19 min', fastEta: '~8 sec' },
+  polygon: { family: 'evm', icon: '/icons/polygon.png', color: '#8247E5', eta: '~8 sec' },
+  sei: { family: 'evm', icon: '/icons/sei.webp', color: '#9B1C31', eta: '~5 sec' },
+  solana: { family: 'solana', icon: '/icons/solana.png', color: '#9945FF', eta: '~25 sec', fastEta: '~8 sec' },
+  sonic: { family: 'evm', icon: '/icons/sonic.png', color: '#2563EB', eta: '~8 sec' },
+  unichain: { family: 'evm', icon: '/icons/unichain.png', color: '#FF2D8D', eta: '~15–19 min', fastEta: '~8 sec' },
+  worldchain: { family: 'evm', icon: '/icons/world-chain.webp', color: '#111111', eta: '~15–19 min', fastEta: '~8 sec' },
+  xdc: { family: 'evm', icon: '/icons/xdc.webp', color: '#0D97D5', eta: '~10 sec' },
 }
 
 const USDC_ICON = '/icons/usdc.png'
@@ -101,7 +116,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'Which blockchains are supported?',
-    a: 'This app supports the CCTP V2 mainnet networks available in Bridge Kit, including major EVM chains and Solana.',
+    a: 'This app supports all 23 USDC mainnets currently available in Circle Bridge Kit: 22 EVM networks plus Solana.',
   },
   {
     q: 'Are there any fees?',
@@ -118,14 +133,28 @@ const ENVIRONMENT_LABEL = 'Mainnet'
 
 const CHAIN_NAMES = {
   ethereum: 'Ethereum',
-  base: 'Base',
   arbitrum: 'Arbitrum',
-  optimism: 'Optimism',
   avalanche: 'Avalanche',
-  polygon: 'Polygon',
-  unichain: 'Unichain',
-  sonic: 'Sonic',
+  base: 'Base',
+  codex: 'Codex',
+  cronos: 'Cronos',
+  edge: 'EDGE',
+  hyperevm: 'HyperEVM',
+  injective: 'Injective',
+  ink: 'Ink',
+  linea: 'Linea',
+  monad: 'Monad',
+  morph: 'Morph',
+  optimism: 'OP Mainnet',
+  pharos: 'Pharos',
+  plume: 'Plume',
+  polygon: 'Polygon PoS',
+  sei: 'Sei',
   solana: 'Solana',
+  sonic: 'Sonic',
+  unichain: 'Unichain',
+  worldchain: 'World Chain',
+  xdc: 'XDC',
 }
 
 const makeChains = () => Object.entries(CHAIN_NAMES).map(([id, name]) => ({
@@ -133,6 +162,7 @@ const makeChains = () => Object.entries(CHAIN_NAMES).map(([id, name]) => ({
   name,
   ...CHAIN_META[id],
   supportsFast: supportsFastTransfer(ENVIRONMENT, id),
+  supportsForwarder: supportsForwarderDestination(ENVIRONMENT, id),
 }))
 
 const shortAddress = (value) => value ? `${value.slice(0, 5)}…${value.slice(-4)}` : ''
@@ -678,7 +708,8 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
   const handledResumeRequestRef = useRef(0)
   const source = findChain(chains, sourceId)
   const destination = findChain(chains, destinationId)
-  const useForwarder = settlementMode === 'orbit'
+  const forwarderAvailable = destination.supportsForwarder
+  const useForwarder = settlementMode === 'orbit' && forwarderAvailable
   const claimWallet = useForwarder
     ? null
     : source.family === destination.family
@@ -845,6 +876,10 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
   }, [source, speed])
 
   useEffect(() => {
+    if (!forwarderAvailable && settlementMode === 'orbit') setSettlementMode('manual')
+  }, [forwarderAvailable, settlementMode])
+
+  useEffect(() => {
     if (!wallet?.address) {
       setBalance({ status: 'idle', value: null, error: '' })
       return undefined
@@ -983,6 +1018,7 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
     } else if (destination.family !== nextDestination?.family) {
       setDestinationWallet(null)
     }
+    if (!nextDestination?.supportsForwarder) setSettlementMode('manual')
     setDestinationId(value)
   }
 
@@ -1423,8 +1459,8 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
   }
 
   const eta = useMemo(
-    () => (speed === 'fast' ? (destination.family === 'solana' ? '~8 seconds' : '< 20 seconds') : source.eta),
-    [speed, destination, source],
+    () => (speed === 'fast' ? source.fastEta : source.eta),
+    [speed, source],
   )
 
   const feeLabel = quote.data
@@ -1551,11 +1587,18 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
           role="radio"
           aria-checked={settlementMode === 'orbit'}
           className={settlementMode === 'orbit' ? 'active' : ''}
-          onClick={() => setSettlementMode('orbit')}
+          onClick={() => {
+            if (forwarderAvailable) setSettlementMode('orbit')
+          }}
+          disabled={!forwarderAvailable}
         >
           <span>
             <strong>Orbit automatic</strong>
-            <small>One source wallet · quoted USDC fee</small>
+            <small>
+              {forwarderAvailable
+                ? 'One source wallet · quoted USDC fee'
+                : `Unavailable to ${destination.name}`}
+            </small>
           </span>
           <Check size={16} />
         </button>
@@ -2190,7 +2233,7 @@ function App({ environment }) {
           <a href="https://developers.circle.com/cctp" target="_blank" rel="noreferrer">
             Circle CCTP <ExternalLink size={11} />
           </a>
-          <a href="https://developers.circle.com/cctp/cctp-supported-blockchains" target="_blank" rel="noreferrer">
+          <a href="https://developers.circle.com/cctp/concepts/supported-chains-and-domains" target="_blank" rel="noreferrer">
             Supported chains <ExternalLink size={11} />
           </a>
           <a href="https://github.com/SHLE1/CCTP" target="_blank" rel="noreferrer">
