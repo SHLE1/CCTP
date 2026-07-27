@@ -894,12 +894,19 @@ main {
   width: 36px;
   height: 36px;
   border-radius: 10px;
+  object-fit: contain;
+  background: var(--field);
+  flex-shrink: 0;
+  display: block;
+}
+.wallet-mark.fallback {
   background: var(--btn);
   color: var(--btn-text);
   display: grid;
   place-items: center;
   font-family: var(--font-mono);
   font-weight: 700;
+  font-size: 14px;
 }
 .sheet .wallet-adapter-button-trigger {
   width: 100%;

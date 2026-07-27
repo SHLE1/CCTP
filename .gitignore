@@ -12,3 +12,5 @@ dist
 **/*keypair*.json
 **/*-wallets.json
 **/bridge-test-*.json
+.vercel
+status-cache.json

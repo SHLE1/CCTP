@@ -233,6 +233,16 @@ export async function connectSourceWallet(environment, chainId, walletProvider) 
   }
 }
 
+/** EIP-6963 icons are data URIs (or occasionally https). Reject anything else. */
+function sanitizeWalletIcon(icon) {
+  if (typeof icon !== 'string') return ''
+  const value = icon.trim()
+  if (!value || value.length > 150_000) return ''
+  if (value.startsWith('data:image/')) return value
+  if (/^https:\/\//i.test(value)) return value
+  return ''
+}
+
 export function subscribeEvmProviders(onProvider) {
   if (typeof window === 'undefined' || typeof onProvider !== 'function') return () => {}
   const seenProviders = new WeakSet()
@@ -244,6 +254,7 @@ export function subscribeEvmProviders(onProvider) {
         uuid: String(info?.uuid || `legacy-${Date.now()}`).slice(0, 128),
         name: String(info?.name || 'Browser wallet').slice(0, 80),
         rdns: String(info?.rdns || '').slice(0, 120),
+        icon: sanitizeWalletIcon(info?.icon),
       },
       provider,
     })
@@ -260,6 +271,7 @@ export function subscribeEvmProviders(onProvider) {
     legacyProviders.forEach((provider, index) => publish({
       uuid: `legacy-${index}`,
       name: provider?.isMetaMask ? 'MetaMask' : 'Browser wallet',
+      icon: '',
     }, provider))
   }, 100)
   return () => {

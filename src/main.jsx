@@ -158,6 +158,25 @@ function ChainMark({ chain, small = false }) {
   )
 }
 
+function WalletMark({ name, icon }) {
+  const [broken, setBroken] = useState(false)
+  const label = (name || '?').slice(0, 1).toUpperCase()
+  if (broken || !icon) {
+    return <span className="wallet-mark fallback">{label}</span>
+  }
+  return (
+    <img
+      className="wallet-mark"
+      src={icon}
+      alt=""
+      width={36}
+      height={36}
+      draggable={false}
+      onError={() => setBroken(true)}
+    />
+  )
+}
+
 function UsdcMark() {
   const [broken, setBroken] = useState(false)
   if (broken) return <span className="usdc-mark fallback">$</span>
@@ -303,7 +322,7 @@ function WalletModal({ chain, environment, onClose, onConnected }) {
                 onClick={() => connect(entry)}
                 disabled={Boolean(connectingProvider)}
               >
-                <span className="wallet-mark">{entry.info.name.slice(0, 1).toUpperCase()}</span>
+                <WalletMark name={entry.info.name} icon={entry.info.icon} />
                 <span>
                   <strong>
                     {connectingProvider === entry.info.uuid ? 'Waiting for wallet…' : entry.info.name}
