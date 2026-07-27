@@ -4,6 +4,7 @@ import {
   createBridgeResultDraft,
   formatUsdcFromMicro,
   isAmountGreaterThanFee,
+  isDestinationWalletCompatibleWithResult,
   isQuoteFresh,
   isRetryableBridgeResult,
   isWalletCompatibleWithResult,
@@ -142,11 +143,15 @@ describe('mainnet transfer safety invariants', () => {
       amount: '1',
       speed: 'fast',
       walletAddress: '0xAbC',
+      settlementMode: 'manual',
+      destinationWalletAddress: 'SoClaim',
     }
     const key = quoteInputKey(input)
     assert.notEqual(key, quoteInputKey({ ...input, amount: '2' }))
     assert.notEqual(key, quoteInputKey({ ...input, recipient: 'So222' }))
     assert.notEqual(key, quoteInputKey({ ...input, speed: 'standard' }))
+    assert.notEqual(key, quoteInputKey({ ...input, settlementMode: 'orbit' }))
+    assert.notEqual(key, quoteInputKey({ ...input, destinationWalletAddress: 'SoOther' }))
     assert.equal(key, quoteInputKey({ ...input, walletAddress: '0xabc' }))
   })
 
@@ -178,6 +183,7 @@ describe('mainnet transfer safety invariants', () => {
       recipient: 'So11111111111111111111111111111111111111112',
       amount: '1',
       speed: 'fast',
+      useForwarder: true,
     }
     const estimate = {
       token: 'USDC',
@@ -205,6 +211,29 @@ describe('mainnet transfer safety invariants', () => {
         destination: { ...estimate.destination, recipientAddress: 'So222' },
       }, input, '0xabcdef'),
       /recipient/,
+    )
+
+    const manualInput = {
+      ...input,
+      useForwarder: false,
+      destinationWalletAddress: 'SoClaim1111111111111111111111111111111111111',
+    }
+    const manualEstimate = {
+      ...estimate,
+      destination: {
+        address: manualInput.destinationWalletAddress,
+        recipientAddress: manualInput.recipient,
+        chain: 'Solana',
+      },
+      fees: [],
+    }
+    assert.equal(validateTransferEstimate(manualEstimate, manualInput, '0xabcdef'), '')
+    assert.match(
+      validateTransferEstimate({
+        ...manualEstimate,
+        fees: [{ type: 'forwarder', token: 'USDC', amount: '0.2' }],
+      }, manualInput, '0xabcdef'),
+      /Self-claim/,
     )
   })
 
@@ -242,6 +271,34 @@ describe('mainnet transfer safety invariants', () => {
       result,
       { address: '0xabcdef', family: 'evm' },
       ethereum,
+    ), false)
+  })
+
+  it('requires the original destination signer for Self-claim retry', () => {
+    const result = createBridgeResultDraft({
+      amount: '1',
+      sourceAddress: '0xABCDEF',
+      sourceChain: base,
+      destinationAddress: 'SoRecipient',
+      destinationSignerAddress: 'SoClaim',
+      destinationChain: solana,
+      speed: 'standard',
+      maxFee: '0',
+      useForwarder: false,
+    })
+    result.state = 'error'
+    result.steps = [{ name: 'burn', state: 'success', txHash: '0xburn' }]
+
+    assert.equal(isRetryableBridgeResult(result), true)
+    assert.equal(isDestinationWalletCompatibleWithResult(
+      result,
+      { address: 'SoClaim', family: 'solana' },
+      solana,
+    ), true)
+    assert.equal(isDestinationWalletCompatibleWithResult(
+      result,
+      { address: 'SoOther', family: 'solana' },
+      solana,
     ), false)
   })
 

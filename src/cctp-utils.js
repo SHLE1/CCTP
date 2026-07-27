@@ -102,6 +102,8 @@ export function quoteInputKey({
   amount,
   speed,
   walletAddress,
+  settlementMode,
+  destinationWalletAddress,
 }) {
   return JSON.stringify([
     String(environment || ''),
@@ -111,6 +113,8 @@ export function quoteInputKey({
     String(amount || '').trim(),
     String(speed || ''),
     String(walletAddress || '').toLowerCase(),
+    String(settlementMode || ''),
+    String(destinationWalletAddress || '').toLowerCase(),
   ])
 }
 
@@ -132,14 +136,28 @@ export function isWalletCompatibleWithResult(result, wallet, expectedSourceChain
     : result.source.address === wallet.address
 }
 
+export function isDestinationWalletCompatibleWithResult(result, wallet, expectedDestinationChain) {
+  if (!result?.destination?.address || !wallet?.address || !expectedDestinationChain) return false
+  if (chainIdentity(result.destination.chain) !== chainIdentity(expectedDestinationChain)) return false
+
+  const expectedFamily = expectedDestinationChain.type === 'evm' ? 'evm' : 'solana'
+  if (wallet.family !== expectedFamily) return false
+
+  return expectedFamily === 'evm'
+    ? result.destination.address.toLowerCase() === wallet.address.toLowerCase()
+    : result.destination.address === wallet.address
+}
+
 export function createBridgeResultDraft({
   amount,
   sourceAddress,
   sourceChain,
   destinationAddress,
+  destinationSignerAddress,
   destinationChain,
   speed,
   maxFee,
+  useForwarder = true,
 }) {
   return {
     amount: String(amount).trim(),
@@ -156,9 +174,9 @@ export function createBridgeResultDraft({
       chain: sourceChain,
     },
     destination: {
-      address: destinationAddress,
+      address: destinationSignerAddress || destinationAddress,
       recipientAddress: destinationAddress,
-      useForwarder: true,
+      ...(useForwarder ? { useForwarder: true } : {}),
       chain: destinationChain,
     },
     steps: [],
@@ -220,8 +238,14 @@ export function isRetryableBridgeResult(result) {
   let amountMicro
   try {
     amountMicro = parseUsdcToMicro(result.amount)
-    const maxFeeMicro = parseUsdcToMicro(result.config.maxFee)
-    if (amountMicro <= 0n || maxFeeMicro <= 0n || maxFeeMicro >= amountMicro) return false
+    if (amountMicro <= 0n) return false
+    if (result.config.maxFee != null) {
+      const maxFeeMicro = parseUsdcToMicro(result.config.maxFee)
+      if (maxFeeMicro < 0n || maxFeeMicro >= amountMicro) return false
+      if (result.destination.useForwarder === true && maxFeeMicro === 0n) return false
+    } else if (result.destination.useForwarder === true) {
+      return false
+    }
   } catch {
     return false
   }

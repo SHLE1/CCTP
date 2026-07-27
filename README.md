@@ -1,6 +1,6 @@
 # Relay — CCTP USDC bridge
 
-An independent interface for moving native USDC between Solana and EVM chains with Circle CCTP V2 and the Circle Orbit forwarder. The app includes an explicit Mainnet/Testnet switch and starts in Testnet mode on first visit.
+An independent interface for moving native USDC between Solana and EVM chains with Circle CCTP V2. Users can self-claim with a destination wallet to avoid the Orbit fee, or choose Circle Orbit for automatic destination minting. The app includes an explicit Mainnet/Testnet switch and starts in Testnet mode on first visit.
 
 ## Run locally
 
@@ -17,10 +17,11 @@ Build the production bundle with `pnpm build`. Run pure unit tests with `pnpm te
 - Solana and EVM route selection, including Sonic
 - Wallet Standard auto-discovery for Solana wallets such as Backpack, Phantom and Solflare
 - EIP-6963 EVM wallet discovery for explicit MetaMask, Rabby, and Coinbase Wallet selection (with legacy fallback and account/chain change disconnect)
-- Live Bridge Kit fee/gas preflight with protocol vs Orbit fee breakdown, verified Forwarding Service fee, and an execution-bound `maxFee`
+- Self-claim mode with destination-wallet mint signing, no Orbit fee, destination gas preflight, and automatic Solana ATA creation
+- Optional Orbit automatic-mint mode with protocol vs Forwarding Service fee breakdown and an execution-bound `maxFee`
 - 60-second quote expiry plus immediate pre-signing USDC and buffered native-gas balance rechecks
 - Canonical source-account USDC balance preflight and 6-decimal amount validation
-- Solana destination ATA preflight (missing ATAs are blocked before burn)
+- Solana destination ATA preflight (Self-claim can create a missing ATA; Orbit requires an existing ATA)
 - Real CCTP V2 Testnet burn → attest → forwarded mint execution
 - Fast and Standard transfer modes (driven by Bridge Kit `fastConfirmations`)
 - Step-by-step `BridgeResult` persistence for in-browser resume + `kit.retry` (forwarder-safe)
@@ -57,7 +58,9 @@ can be resumed with **Resume transfer** when:
 
 Legacy summary-only snapshots remain inspectable (explorer links) but are not auto-retryable.
 
-Forwarder retries call `kit.retry(result, { from: sourceAdapter, to: undefined })` per Bridge Kit docs.
+Forwarder retries call `kit.retry(result, { from: sourceAdapter, to: undefined })`.
+Self-claim retries require both the original source adapter and the original destination
+claim adapter.
 
 ## Production warning
 
@@ -65,6 +68,7 @@ Mainnet mode can move **real USDC** and spend real gas. Before relying on this a
 
 For a first mainnet smoke test: use a dedicated source wallet and RPC, request a
 fresh quote, and choose an amount whose displayed **Receive** value is greater than
-zero. The Circle Forwarding Service charges at least 0.20 USDC plus destination gas,
-so do not use a hard-coded 0.1 USDC test amount. Keep the tab open through mint and
-verify the source burn, destination mint, recipient address, and destination balance.
+zero. In Self-claim mode, fund the destination claim wallet with its native gas token.
+In Orbit mode, use the live quoted Forwarding Service fee rather than a hard-coded
+test amount. Keep the tab open through mint and verify the source burn, destination
+mint, recipient address, and destination balance.

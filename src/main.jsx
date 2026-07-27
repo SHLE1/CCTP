@@ -21,6 +21,7 @@ import {
   QUOTE_TTL_MS,
   assertSourceWalletReady,
   attachEvmWalletListeners,
+  checkDestinationGasReadiness,
   checkDestinationReadiness,
   checkSourceGasReadiness,
   connectSourceWallet,
@@ -33,6 +34,7 @@ import {
   getDefinition,
   getSolanaRpcEndpoint,
   isAmountGreaterThanFee,
+  isDestinationWalletCompatibleWithResult,
   isRetryableBridgeResult,
   isQuoteFresh,
   isTransferStorageAvailable,
@@ -80,7 +82,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'How does CCTP work?',
-    a: 'USDC is burned on the source chain, Circle attests the burn, then native USDC is minted on the destination. This interface uses Circle Bridge Kit with Orbit for the full burn–attest–mint flow.',
+    a: 'USDC is burned on the source chain, Circle attests the burn, then native USDC is minted on the destination. Self-claim lets your destination wallet submit the mint; Orbit can submit it automatically for a quoted USDC fee.',
   },
   {
     q: 'What is the difference between Fast Transfer and Standard Transfer?',
@@ -92,7 +94,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'Are there any fees?',
-    a: 'This interface does not charge an extra fee. You still pay source-chain gas, Fast Transfer may include a CCTP fee, and Circle’s Forwarding Service charges a fee for relayed minting. All USDC fees are quoted before you sign.',
+    a: 'This interface does not charge an extra fee. Self-claim has no Orbit fee but requires destination-chain gas. Fast Transfer may include a CCTP fee. Orbit automatic minting adds a quoted Forwarding Service fee.',
   },
   {
     q: 'Is CCTP secure?',
@@ -355,6 +357,7 @@ function ProgressModal({
   destination,
   amount,
   speed,
+  settlementMode,
   phase,
   error,
   warning,
@@ -362,6 +365,7 @@ function ProgressModal({
   canRetry,
   retryBlockedReason,
   sourceAddress,
+  destinationSignerAddress,
   recipient,
   feeCap,
   receive,
@@ -433,6 +437,14 @@ function ProgressModal({
             <code>{sourceAddress}</code>
             <span>Recipient</span>
             <code>{recipient}</code>
+            <span>Completion</span>
+            <strong>{settlementMode === 'orbit' ? 'Orbit automatic mint' : 'Self-claim'}</strong>
+            {settlementMode !== 'orbit' && (
+              <>
+                <span>Claim wallet</span>
+                <code>{destinationSignerAddress}</code>
+              </>
+            )}
             <span>Maximum USDC fees</span>
             <strong>{feeCap} USDC</strong>
             <span>Transfer mode</span>
@@ -470,8 +482,8 @@ function ProgressModal({
             <Info size={15} />
             <span>
               {environment === 'mainnet'
-                ? <><strong>Mainnet.</strong> Real USDC will be burned. Check network, address, and amount. Keep this tab open until mint completes.</>
-                : <><strong>Testnet.</strong> Test USDC will be burned and reminted via Orbit. Keep this tab open until mint completes.</>}
+                ? <><strong>Mainnet.</strong> Real USDC will be burned. Check network, address, amount, and completion mode. Keep this tab open until mint completes.</>
+                : <><strong>Testnet.</strong> Test USDC will be burned and minted with the selected completion mode. Keep this tab open until mint completes.</>}
             </span>
           </div>
         )}
@@ -498,7 +510,9 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
   const [destinationId, setDestinationId] = useState('solana')
   const [amount, setAmount] = useState('')
   const [speed, setSpeed] = useState('fast')
+  const [settlementMode, setSettlementMode] = useState('manual')
   const [wallet, setWallet] = useState(null)
+  const [destinationWallet, setDestinationWallet] = useState(null)
   const [recipient, setRecipient] = useState('')
   const [quote, setQuote] = useState({
     status: 'idle',
@@ -507,7 +521,7 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
     key: '',
     quotedAt: 0,
   })
-  const [walletModal, setWalletModal] = useState(false)
+  const [walletModal, setWalletModal] = useState(null)
   const [transfer, setTransfer] = useState({
     open: false,
     phase: 'ready',
@@ -523,6 +537,15 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
   const transferInFlightRef = useRef(false)
   const source = findChain(chains, sourceId)
   const destination = findChain(chains, destinationId)
+  const useForwarder = settlementMode === 'orbit'
+  const claimWallet = useForwarder
+    ? null
+    : source.family === destination.family
+      ? wallet
+      : destinationWallet
+  const needsDestinationWallet = !useForwarder
+    && source.family !== destination.family
+    && !destinationWallet
   const amountError = validateAmount(amount)
   const feeBreakdown = quoteFeeBreakdown(quote.data)
   const receive = quote.data && !amountError ? subtractUsdcAmounts(amount, feeBreakdown.total) : null
@@ -537,6 +560,8 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
     amount,
     speed,
     walletAddress: wallet?.address,
+    settlementMode,
+    destinationWalletAddress: claimWallet?.address,
   })
   quoteKeyRef.current = currentQuoteKey
   const quoteIsCurrent = quote.status === 'ready'
@@ -550,6 +575,9 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
     ? findChainIdForDefinition(environment, transfer.result.destination?.chain)
     : null
   const retrySourceDefinition = retrySourceId ? getDefinition(environment, retrySourceId) : null
+  const retryDestinationDefinition = resultDestinationId
+    ? getDefinition(environment, resultDestinationId)
+    : null
   const modalSource = retrySourceId ? findChain(chains, retrySourceId) : source
   const modalDestination = resultDestinationId ? findChain(chains, resultDestinationId) : destination
   const routeVerified = !transfer.result || Boolean(retrySourceId && resultDestinationId)
@@ -559,11 +587,40 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
     && retrySourceDefinition
     && isWalletCompatibleWithResult(transfer.result, wallet, retrySourceDefinition),
   )
+  const retryUsesForwarder = transfer.result?.destination?.useForwarder === true
+  const retryClaimWallet = retryUsesForwarder
+    ? null
+    : retrySourceDefinition?.type === retryDestinationDefinition?.type
+      ? wallet
+      : destinationWallet
+  const retryDestinationWalletMatches = Boolean(
+    retryUsesForwarder
+    || (
+      transfer.result
+      && retryClaimWallet
+      && retryDestinationDefinition
+      && isDestinationWalletCompatibleWithResult(
+        transfer.result,
+        retryClaimWallet,
+        retryDestinationDefinition,
+      )
+    ),
+  )
 
   useEffect(() => {
     quoteRequestRef.current += 1
     setQuote({ status: 'idle', data: null, error: '', key: '', quotedAt: 0 })
-  }, [environment, sourceId, destinationId, amount, speed, recipient, wallet?.address])
+  }, [
+    environment,
+    sourceId,
+    destinationId,
+    amount,
+    speed,
+    recipient,
+    settlementMode,
+    wallet?.address,
+    claimWallet?.address,
+  ])
 
   useEffect(() => {
     if (quote.status !== 'ready' || !quote.quotedAt) return undefined
@@ -630,11 +687,39 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
         }
       },
       onChainChanged: () => {
+        if (
+          transferInFlightRef.current
+          && settlementMode === 'manual'
+          && source.family === destination.family
+        ) {
+          return
+        }
         setWallet(null)
         setQuote({ status: 'idle', data: null, error: '', key: '', quotedAt: 0 })
       },
     })
-  }, [wallet])
+  }, [destination.family, settlementMode, source.family, wallet])
+
+  useEffect(() => {
+    if (
+      !destinationWallet?.provider
+      || destinationWallet.family !== 'evm'
+      || source.family === destination.family
+    ) return undefined
+    return attachEvmWalletListeners(destinationWallet.provider, {
+      onAccountsChanged: (accounts) => {
+        const next = accounts?.[0]
+        if (!next || next.toLowerCase() !== destinationWallet.address?.toLowerCase()) {
+          setDestinationWallet(null)
+          setQuote({ status: 'idle', data: null, error: '', key: '', quotedAt: 0 })
+        }
+      },
+      onChainChanged: () => {
+        setDestinationWallet(null)
+        setQuote({ status: 'idle', data: null, error: '', key: '', quotedAt: 0 })
+      },
+    })
+  }, [destination.family, destinationWallet, source.family])
 
   useEffect(() => {
     if (wallet?.family !== 'solana') return
@@ -645,22 +730,42 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
     }
   }, [solanaWalletState.connected, solanaWalletState.publicKey, wallet])
 
+  useEffect(() => {
+    if (destinationWallet?.family !== 'solana') return
+    const currentAddress = solanaWalletState.publicKey?.toString()
+    if (!solanaWalletState.connected || currentAddress !== destinationWallet.address) {
+      setDestinationWallet(null)
+      setQuote({ status: 'idle', data: null, error: '', key: '', quotedAt: 0 })
+    }
+  }, [destinationWallet, solanaWalletState.connected, solanaWalletState.publicKey])
+
   function swap() {
     setSourceId(destinationId)
     setDestinationId(sourceId)
     setWallet(null)
+    setDestinationWallet(null)
     setRecipient('')
   }
 
   function setSource(value) {
     setSourceId(value)
     setWallet(null)
+    setDestinationWallet(null)
+  }
+
+  function setDestination(value) {
+    setDestinationId(value)
+    setDestinationWallet(null)
   }
 
   async function changeEnvironment(value) {
     if (value === environment) return
     await wallet?.provider?.disconnect?.().catch?.(() => {})
+    if (destinationWallet?.provider !== wallet?.provider) {
+      await destinationWallet?.provider?.disconnect?.().catch?.(() => {})
+    }
     setWallet(null)
+    setDestinationWallet(null)
     setRecipient('')
     setQuote({ status: 'idle', data: null, error: '', key: '', quotedAt: 0 })
     setTransfer({
@@ -692,9 +797,12 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
     sourceId,
     destinationId,
     adapter: wallet.adapter,
+    destinationAdapter: claimWallet?.adapter,
+    destinationWalletAddress: claimWallet?.address,
     recipient,
     amount,
     speed,
+    useForwarder,
     ...(maxFee ? { maxFee } : {}),
   })
 
@@ -704,20 +812,26 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
     const input = bridgeInput()
     setQuote({ status: 'loading', data: null, error: '', key: requestKey, quotedAt: 0 })
     try {
-      await checkDestinationReadiness(environment, destinationId, recipient)
+      await checkDestinationReadiness(environment, destinationId, recipient, useForwarder)
         .then((status) => {
           if (!status.ready) throw new Error(status.error)
         })
       const data = await estimateTransfer(input)
       const estimateError = validateTransferEstimate(data, input, wallet.address)
       if (estimateError) throw new Error(estimateError)
-      const gasReadiness = await checkSourceGasReadiness(
-        environment,
-        sourceId,
-        wallet,
-        data,
-      )
-      if (!gasReadiness.ready) throw new Error(gasReadiness.error)
+      const [sourceGasReadiness, destinationGasReadiness] = await Promise.all([
+        checkSourceGasReadiness(environment, sourceId, wallet, data),
+        useForwarder
+          ? Promise.resolve({ ready: true })
+          : checkDestinationGasReadiness(
+              environment,
+              destinationId,
+              claimWallet,
+              data,
+            ),
+      ])
+      if (!sourceGasReadiness.ready) throw new Error(sourceGasReadiness.error)
+      if (!destinationGasReadiness.ready) throw new Error(destinationGasReadiness.error)
       if (requestId !== quoteRequestRef.current || requestKey !== quoteKeyRef.current) return
       setQuote({
         status: 'ready',
@@ -793,13 +907,33 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
       const readinessRecipient = resultForRetry
         ? (resultForRetry.destination?.recipientAddress || resultForRetry.destination?.address)
         : recipient
+      const activeUseForwarder = resultForRetry
+        ? resultForRetry.destination?.useForwarder === true
+        : useForwarder
+      const activeClaimWallet = resultForRetry ? retryClaimWallet : claimWallet
       if (!readinessDestinationId || !readinessRecipient) {
         throw new Error('The transfer destination could not be verified.')
+      }
+      if (!activeUseForwarder && !activeClaimWallet) {
+        throw new Error('Connect the destination claim wallet before continuing this Self-claim transfer.')
+      }
+      if (
+        !activeUseForwarder
+        && getDefinition(environment, verifiedSourceId).type
+          !== getDefinition(environment, readinessDestinationId).type
+      ) {
+        await assertSourceWalletReady(
+          environment,
+          readinessDestinationId,
+          activeClaimWallet,
+          'destination',
+        )
       }
       const readiness = await checkDestinationReadiness(
         environment,
         readinessDestinationId,
         readinessRecipient,
+        activeUseForwarder,
       )
       if (!readiness.ready) throw new Error(readiness.error)
 
@@ -815,7 +949,13 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
         if (!persistTransfer(activeTransferRef.current, environment)) {
           throw new Error('The recovery snapshot could not be saved. Retry was not started.')
         }
-        result = await retryTransfer(resultForRetry, wallet, environment, handleBridgeEvent)
+        result = await retryTransfer(
+          resultForRetry,
+          wallet,
+          activeClaimWallet,
+          environment,
+          handleBridgeEvent,
+        )
       } else {
         const quoteStillFresh = quote.status === 'ready'
           && quote.key === currentQuoteKey
@@ -830,7 +970,7 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
         )
         if (estimateError) throw new Error(estimateError)
         if (!isAmountGreaterThanFee(amount, feeBreakdown.total)) {
-          throw new Error('The transfer amount must be greater than all CCTP and Forwarding Service fees.')
+          throw new Error('The transfer amount must be greater than all quoted USDC fees.')
         }
         const refreshedEstimate = await estimateTransfer(bridgeInput())
         const refreshedEstimateError = validateTransferEstimate(
@@ -858,9 +998,17 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
         if (!isAmountGreaterThanFee(amount, refreshedFeeBreakdown.total)) {
           throw new Error('The refreshed fees leave no positive destination amount.')
         }
-        const [latestBalance, gasReadiness] = await Promise.all([
+        const [latestBalance, sourceGasReadiness, destinationGasReadiness] = await Promise.all([
           fetchUsdcBalance(environment, verifiedSourceId, wallet.address, wallet.provider),
           checkSourceGasReadiness(environment, verifiedSourceId, wallet, refreshedEstimate),
+          useForwarder
+            ? Promise.resolve({ ready: true })
+            : checkDestinationGasReadiness(
+                environment,
+                destinationId,
+                claimWallet,
+                refreshedEstimate,
+              ),
         ])
         if (latestBalance == null) {
           throw new Error('The source USDC balance could not be verified immediately before signing.')
@@ -869,7 +1017,8 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
         if (parseUsdcToMicro(amount) > parseUsdcToMicro(latestBalance)) {
           throw new Error('The source USDC balance changed and is now below the transfer amount.')
         }
-        if (!gasReadiness.ready) throw new Error(gasReadiness.error)
+        if (!sourceGasReadiness.ready) throw new Error(sourceGasReadiness.error)
+        if (!destinationGasReadiness.ready) throw new Error(destinationGasReadiness.error)
 
         await assertSourceWalletReady(environment, verifiedSourceId, wallet)
         const input = bridgeInput(refreshedFeeBreakdown.total)
@@ -896,7 +1045,7 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
           : '',
       }))
       if (wallet?.address) {
-        fetchUsdcBalance(environment, sourceId, wallet.address, wallet.provider)
+        fetchUsdcBalance(environment, sourceId, wallet.address)
           .then((value) => setBalance({ status: 'ready', value, error: '' }))
           .catch((error) => setBalance({
             status: 'error',
@@ -917,12 +1066,24 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
     } finally {
       activeTransferRef.current = null
       transferInFlightRef.current = false
+      if (!useForwarder && source.family === destination.family && wallet?.family === 'evm') {
+        setWallet(null)
+        setQuote({ status: 'idle', data: null, error: '', key: '', quotedAt: 0 })
+      }
     }
   }
 
   async function disconnect() {
     await wallet?.provider?.disconnect?.().catch?.(() => {})
     setWallet(null)
+    setQuote({ status: 'idle', data: null, error: '', key: '', quotedAt: 0 })
+  }
+
+  async function disconnectDestination() {
+    if (destinationWallet?.provider !== wallet?.provider) {
+      await destinationWallet?.provider?.disconnect?.().catch?.(() => {})
+    }
+    setDestinationWallet(null)
     setQuote({ status: 'idle', data: null, error: '', key: '', quotedAt: 0 })
   }
 
@@ -957,10 +1118,22 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
       setAmount(String(saved.result.amount || ''))
       setRecipient(restoredRecipient)
       setSpeed(restoredSpeed)
+      setSettlementMode(saved.result.destination?.useForwarder === true ? 'orbit' : 'manual')
       setQuote({ status: 'idle', data: null, error: '', key: '', quotedAt: 0 })
       const expectedSource = getDefinition(environment, restoredSourceId)
       if (wallet && !isWalletCompatibleWithResult(saved.result, wallet, expectedSource)) {
         setWallet(null)
+      }
+      const expectedDestination = getDefinition(environment, restoredDestinationId)
+      if (
+        destinationWallet
+        && !isDestinationWalletCompatibleWithResult(
+          saved.result,
+          destinationWallet,
+          expectedDestination,
+        )
+      ) {
+        setDestinationWallet(null)
       }
     }
     if (state === 'success') {
@@ -997,7 +1170,8 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
 
   function primaryAction() {
     if (rpcNotReady) return
-    if (!wallet) return setWalletModal(true)
+    if (!wallet) return setWalletModal('source')
+    if (needsDestinationWallet) return setWalletModal('destination')
     if (balance.status !== 'ready' || balance.value == null) return
     if (amountError || recipientError || balanceTooLow) return
     if (
@@ -1036,6 +1210,12 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
   const feeLabel = quote.data
     ? (feeBreakdown.total !== '0' ? `${feeBreakdown.total} USDC` : '0 USDC')
     : '—'
+  const destinationGasEstimate = !useForwarder
+    ? feeBreakdown.gasFees.find((item) => (
+        item.blockchain === getDefinition(environment, destinationId).chain
+        && item.fees?.fee != null
+      ))
+    : null
 
   const balanceLabel = !wallet
     ? '—'
@@ -1047,7 +1227,7 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
 
   const formBlocked = Boolean(
     rpcNotReady
-    || (wallet && (
+    || (wallet && !needsDestinationWallet && (
       amountError
       || recipientError
       || balance.status !== 'ready'
@@ -1108,7 +1288,36 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
         <button className="swap-button" onClick={swap} aria-label="Swap chains">
           <ArrowLeftRight size={15} />
         </button>
-        <ChainSelect chains={chains} label="Destination Chain" value={destinationId} otherValue={sourceId} onChange={setDestinationId} />
+        <ChainSelect chains={chains} label="Destination Chain" value={destinationId} otherValue={sourceId} onChange={setDestination} />
+      </div>
+
+      <div className="settlement-panel" role="radiogroup" aria-label="Mint completion mode">
+        <button
+          type="button"
+          role="radio"
+          aria-checked={settlementMode === 'manual'}
+          className={settlementMode === 'manual' ? 'active' : ''}
+          onClick={() => setSettlementMode('manual')}
+        >
+          <span>
+            <strong>Self-claim</strong>
+            <small>0 Orbit fee · destination wallet pays gas</small>
+          </span>
+          <Check size={16} />
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={settlementMode === 'orbit'}
+          className={settlementMode === 'orbit' ? 'active' : ''}
+          onClick={() => setSettlementMode('orbit')}
+        >
+          <span>
+            <strong>Orbit automatic</strong>
+            <small>One source wallet · quoted USDC fee</small>
+          </span>
+          <Check size={16} />
+        </button>
       </div>
 
       <div className="amount-panel">
@@ -1143,14 +1352,20 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
         {amount && amountError && <small className="field-error">{amountError}</small>}
         {balance.status === 'error' && <small className="field-error">{balance.error || 'USDC balance is unavailable'}</small>}
         {balanceTooLow && <small className="field-error">Amount exceeds USDC balance</small>}
-        {feeTooHigh && <small className="field-error">Amount must be greater than all CCTP and Forwarding Service fees</small>}
+        {feeTooHigh && <small className="field-error">Amount must be greater than all quoted USDC fees</small>}
       </div>
 
       <div className="recipient-panel">
         <div className="amount-meta">
           <span className="field-label">Recipient on {destination.name}</span>
-          {wallet && source.family === destination.family && (
-            <button type="button" className="use-wallet" onClick={() => setRecipient(wallet.address)}>Use wallet</button>
+          {(claimWallet || (useForwarder && wallet && source.family === destination.family)) && (
+            <button
+              type="button"
+              className="use-wallet"
+              onClick={() => setRecipient((claimWallet || wallet).address)}
+            >
+              Use wallet
+            </button>
           )}
         </div>
         <input
@@ -1171,6 +1386,11 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
           )}
           {quote.data && feeBreakdown.protocol !== '0' && (
             <span className="info-pill soft">CCTP: {feeBreakdown.protocol}</span>
+          )}
+          {destinationGasEstimate && (
+            <span className="info-pill soft">
+              Claim gas: {destinationGasEstimate.fees.fee} {destinationGasEstimate.token}
+            </span>
           )}
           <span className="info-pill">ETA: {eta}</span>
           <span className="info-pill">CCTP v2</span>
@@ -1196,8 +1416,14 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
       {quote.error && <div className="error-message quote-error"><Info size={14} /><span>{quote.error}</span></div>}
       {wallet && (
         <div className="connected-row">
-          <span><Wallet size={14} />{shortAddress(wallet.address)}</span>
+          <span><Wallet size={14} />Source · {shortAddress(wallet.address)}</span>
           <button type="button" onClick={disconnect}>Disconnect</button>
+        </div>
+      )}
+      {!useForwarder && source.family !== destination.family && destinationWallet && (
+        <div className="connected-row">
+          <span><Wallet size={14} />Claim · {shortAddress(destinationWallet.address)}</span>
+          <button type="button" onClick={disconnectDestination}>Disconnect</button>
         </div>
       )}
 
@@ -1210,7 +1436,9 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
         {rpcNotReady
           ? 'Configure Solana RPC'
           : !wallet
-            ? 'Connect Wallet'
+            ? 'Connect source wallet'
+            : needsDestinationWallet
+              ? `Connect ${destination.name} claim wallet`
             : amountError
               ? (amount ? 'Invalid amount' : 'Enter amount')
               : recipientError
@@ -1234,10 +1462,14 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
 
       {walletModal && (
         <WalletModal
-          chain={source}
+          chain={walletModal === 'destination' ? destination : source}
           environment={environment}
           onClose={() => setWalletModal(false)}
-          onConnected={(connected) => { setWallet(connected); setWalletModal(false) }}
+          onConnected={(connected) => {
+            if (walletModal === 'destination') setDestinationWallet(connected)
+            else setWallet(connected)
+            setWalletModal(null)
+          }}
         />
       )}
       {transfer.open && (
@@ -1247,15 +1479,19 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
           destination={modalDestination}
           amount={transfer.result?.amount || amount || '0'}
           speed={speed}
+          settlementMode={transfer.result
+            ? (transfer.result.destination?.useForwarder === true ? 'orbit' : 'manual')
+            : settlementMode}
           phase={transfer.phase}
           error={transfer.error}
           warning={transfer.warning}
           result={transfer.result}
-          canRetry={transfer.canRetry && retryWalletMatches}
-          retryBlockedReason={transfer.canRetry && !retryWalletMatches
-            ? 'Close this dialog, connect the exact source wallet and account shown in the saved transfer, then open Resume transfer again.'
+          canRetry={transfer.canRetry && retryWalletMatches && retryDestinationWalletMatches}
+          retryBlockedReason={transfer.canRetry && (!retryWalletMatches || !retryDestinationWalletMatches)
+            ? 'Close this dialog, connect the exact source and destination claim wallets shown in the saved transfer, then open Resume transfer again.'
             : ''}
           sourceAddress={transfer.result?.source?.address || wallet?.address || ''}
+          destinationSignerAddress={transfer.result?.destination?.address || claimWallet?.address || ''}
           recipient={transfer.result?.destination?.recipientAddress || recipient}
           feeCap={feeBreakdown.total}
           receive={receive || '0'}
@@ -1335,7 +1571,7 @@ function App({ environment, setEnvironment }) {
 
       <main>
         <BridgeCard environment={environment} onEnvironmentChange={setEnvironment} chains={chains} />
-        <p className="footnote">No interface fee. Gas, CCTP, and Forwarding Service fees apply as quoted.</p>
+        <p className="footnote">No interface fee. Self-claim uses destination gas; Orbit and CCTP fees apply only when quoted.</p>
 
         <section className="faq" aria-label="Frequently asked questions">
           <h2>FAQ</h2>

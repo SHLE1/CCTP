@@ -27,6 +27,7 @@ import {
   TRANSFER_STORAGE_VERSION,
   createBridgeResultDraft,
   formatUsdcFromMicro,
+  isDestinationWalletCompatibleWithResult,
   isRetryableBridgeResult,
   isWalletCompatibleWithResult,
   serializeBridgeResult,
@@ -40,6 +41,7 @@ export {
   createBridgeResultDraft,
   formatUsdcFromMicro,
   isAmountGreaterThanFee,
+  isDestinationWalletCompatibleWithResult,
   isRetryableBridgeResult,
   isQuoteFresh,
   isWalletCompatibleWithResult,
@@ -301,11 +303,12 @@ export function attachEvmWalletListeners(provider, { onAccountsChanged, onChainC
   return () => {}
 }
 
-export async function assertSourceWalletReady(environment, chainId, wallet) {
+export async function assertSourceWalletReady(environment, chainId, wallet, role = 'source') {
   const definition = getDefinition(environment, chainId)
   const expectedFamily = definition.type === 'evm' ? 'evm' : 'solana'
+  const walletLabel = role === 'destination' ? 'destination claim wallet' : 'source wallet'
   if (!wallet?.address || wallet.family !== expectedFamily) {
-    throw new Error('The connected wallet does not match the selected source chain.')
+    throw new Error(`The connected ${walletLabel} does not match the selected ${role} chain.`)
   }
 
   if (expectedFamily === 'evm') {
@@ -318,7 +321,7 @@ export async function assertSourceWalletReady(environment, chainId, wallet) {
     ])
     const currentAddress = accounts?.[0]
     if (!currentAddress || currentAddress.toLowerCase() !== wallet.address.toLowerCase()) {
-      throw new Error('The active EVM wallet account changed. Reconnect the source wallet and request a fresh quote.')
+      throw new Error(`The active EVM account changed. Reconnect the ${walletLabel} and request a fresh quote.`)
     }
     let numericChainId
     try {
@@ -334,7 +337,7 @@ export async function assertSourceWalletReady(environment, chainId, wallet) {
 
   const currentAddress = wallet.provider?.publicKey?.toString?.()
   if (!wallet.provider?.isConnected || currentAddress !== wallet.address) {
-    throw new Error('The active Solana wallet changed or disconnected. Reconnect it before transferring.')
+    throw new Error(`The active Solana ${walletLabel} changed or disconnected. Reconnect it before transferring.`)
   }
   return true
 }
@@ -478,7 +481,68 @@ export async function checkSourceGasReadiness(environment, chainId, wallet, esti
   return { ready: true, estimatedGas, requiredGas, gasBalance }
 }
 
-export async function checkDestinationReadiness(environment, chainId, address) {
+export async function checkDestinationGasReadiness(environment, chainId, wallet, estimate) {
+  const definition = getDefinition(environment, chainId)
+  const destinationFees = (estimate?.gasFees || []).filter(
+    (item) => item?.blockchain === definition.chain,
+  )
+  if (!destinationFees.length) {
+    return {
+      ready: false,
+      error: `Could not verify the destination-chain gas estimate for ${definition.name}. Request a fresh quote before transferring.`,
+    }
+  }
+
+  let estimatedGas = 0n
+  try {
+    for (const item of destinationFees) {
+      if (item.error || item.fees?.fee == null) throw new Error('gas estimate unavailable')
+      estimatedGas += parseUnits(String(item.fees.fee), definition.nativeCurrency.decimals)
+    }
+  } catch {
+    return {
+      ready: false,
+      error: `Could not estimate the destination mint transaction on ${definition.name}. Check the claim wallet balance and RPC, then request a fresh quote.`,
+    }
+  }
+  if (estimatedGas <= 0n) {
+    return {
+      ready: false,
+      error: `The destination mint gas estimate for ${definition.name} was zero or invalid. Request a fresh quote before transferring.`,
+    }
+  }
+
+  let gasBalance
+  try {
+    if (definition.type === 'evm') {
+      if (!isAddress(wallet?.address || '')) throw new Error('wallet unavailable')
+      gasBalance = BigInt(await evmJsonRpc(definition, 'eth_getBalance', [wallet.address, 'latest']))
+    } else {
+      const connection = new Connection(getSolanaRpcEndpoint(environment), 'confirmed')
+      gasBalance = BigInt(await connection.getBalance(new PublicKey(wallet.address), 'confirmed'))
+    }
+  } catch {
+    return {
+      ready: false,
+      error: `Could not verify the claim wallet's ${definition.nativeCurrency.symbol} balance on ${definition.name}. Check the wallet and RPC, then request a fresh quote.`,
+    }
+  }
+
+  const requiredGas = (estimatedGas * 150n + 99n) / 100n
+  if (gasBalance < requiredGas) {
+    return {
+      ready: false,
+      estimatedGas,
+      requiredGas,
+      gasBalance,
+      error: `Insufficient ${definition.nativeCurrency.symbol} in the claim wallet on ${definition.name}. Keep at least about ${formatUnits(requiredGas, definition.nativeCurrency.decimals)} ${definition.nativeCurrency.symbol} available.`,
+    }
+  }
+
+  return { ready: true, estimatedGas, requiredGas, gasBalance }
+}
+
+export async function checkDestinationReadiness(environment, chainId, address, useForwarder = true) {
   const definition = getDefinition(environment, chainId)
   if (definition.type !== 'solana') return { ready: true }
 
@@ -490,11 +554,14 @@ export async function checkDestinationReadiness(environment, chainId, address) {
   )
   const connection = new Connection(getSolanaRpcEndpoint(environment), 'confirmed')
   const account = await connection.getAccountInfo(ata, 'confirmed')
+  if (!account && !useForwarder) {
+    return { ready: true, ata: ata.toString(), needsAtaCreation: true }
+  }
   if (!account || !account.owner.equals(SOLANA_TOKEN_PROGRAM_ID)) {
     return {
       ready: false,
       ata: ata.toString(),
-      error: `The recipient does not have a USDC Associated Token Account (${ata.toString()}). Create/fund that ATA before bridging to Solana.`,
+      error: `The recipient does not have a USDC Associated Token Account (${ata.toString()}). Use Self-claim so the destination wallet can create it, or create/fund that ATA before using Orbit.`,
     }
   }
   return { ready: true, ata: ata.toString() }
@@ -533,12 +600,35 @@ export function validateTransferEstimate(estimate, input, sourceAddress) {
   ) {
     return 'The quote does not match the selected destination chain or recipient.'
   }
+  if (
+    !input.useForwarder
+    && (
+      !input.destinationWalletAddress
+      || !addressesMatch(
+        estimate.destination?.address,
+        input.destinationWalletAddress,
+        destination.type,
+      )
+    )
+  ) {
+    return 'The quote does not match the connected destination claim wallet.'
+  }
 
   const fees = estimate.fees || []
   if (fees.some((fee) => fee?.error || fee?.amount == null)) {
-    return 'Bridge Kit could not verify all CCTP and Forwarding Service fees. Request a fresh quote.'
+    return 'Bridge Kit could not verify all quoted USDC fees. Request a fresh quote.'
   }
   const forwarderFee = fees.find((fee) => fee?.type === 'forwarder')
+  if (!input.useForwarder) {
+    if (!forwarderFee) return ''
+    try {
+      return parseUnits(String(forwarderFee.amount), 6) === 0n
+        ? ''
+        : 'A Forwarding Service fee appeared in a Self-claim quote. The transfer was blocked before signing.'
+    } catch {
+      return 'Bridge Kit returned an invalid Forwarding Service fee.'
+    }
+  }
   try {
     if (!forwarderFee || parseUnits(String(forwarderFee.amount), 6) <= 0n) {
       return 'The Forwarding Service fee is missing from the quote. The transfer was blocked before signing.'
@@ -549,14 +639,35 @@ export function validateTransferEstimate(estimate, input, sourceAddress) {
   return ''
 }
 
-function paramsFor({ environment, sourceId, destinationId, adapter, recipient, amount, speed, maxFee }) {
+function paramsFor({
+  environment,
+  sourceId,
+  destinationId,
+  adapter,
+  destinationAdapter,
+  destinationWalletAddress,
+  recipient,
+  amount,
+  speed,
+  maxFee,
+  useForwarder = true,
+}) {
+  if (!useForwarder && !destinationAdapter) {
+    throw new Error('Connect a destination claim wallet before requesting a Self-claim quote.')
+  }
   return {
     from: { adapter, chain: getDefinition(environment, sourceId).chain },
-    to: {
-      chain: getDefinition(environment, destinationId).chain,
-      recipientAddress: recipient.trim(),
-      useForwarder: true,
-    },
+    to: useForwarder
+      ? {
+          chain: getDefinition(environment, destinationId).chain,
+          recipientAddress: recipient.trim(),
+          useForwarder: true,
+        }
+      : {
+          adapter: destinationAdapter,
+          chain: getDefinition(environment, destinationId).chain,
+          recipientAddress: recipient.trim(),
+        },
     amount: String(amount).trim(),
     token: 'USDC',
     config: {
@@ -600,39 +711,57 @@ export function normalizeRetryResult(result, environment) {
   }
 
   const sanitized = serializeBridgeResult(result)
+  const useForwarder = result.destination.useForwarder === true
   return {
     ...sanitized,
     config: {
       transferSpeed: result.config.transferSpeed,
       batchTransactions: false,
-      maxFee: String(result.config.maxFee),
+      ...(result.config.maxFee != null ? { maxFee: String(result.config.maxFee) } : {}),
     },
     source: {
       address: result.source.address,
       chain: sourceChain,
     },
     destination: {
-      address: recipient,
+      address: useForwarder ? recipient : result.destination.address,
       recipientAddress: recipient,
-      useForwarder: true,
+      ...(useForwarder ? { useForwarder: true } : {}),
       chain: destinationChain,
     },
   }
 }
 
-export async function retryTransfer(result, wallet, environment, onEvent) {
+export async function retryTransfer(result, wallet, destinationWallet, environment, onEvent) {
   const normalizedResult = normalizeRetryResult(result, environment)
   const sourceId = findChainIdForDefinition(environment, normalizedResult.source.chain)
   const expectedSource = sourceId ? getDefinition(environment, sourceId) : null
   if (!expectedSource || !isWalletCompatibleWithResult(normalizedResult, wallet, expectedSource)) {
     throw new Error('请连接原转账使用的来源链钱包和账户后再重试。当前钱包与保存的来源地址或网络不匹配。')
   }
+  const destinationId = findChainIdForDefinition(environment, normalizedResult.destination.chain)
+  const expectedDestination = destinationId ? getDefinition(environment, destinationId) : null
+  const useForwarder = normalizedResult.destination.useForwarder === true
+  if (
+    !useForwarder
+    && (
+      !expectedDestination
+      || !isDestinationWalletCompatibleWithResult(
+        normalizedResult,
+        destinationWallet,
+        expectedDestination,
+      )
+    )
+  ) {
+    throw new Error('请连接原转账使用的目的链 Claim 钱包和账户后再重试。')
+  }
   const handler = (payload) => onEvent?.(payload)
   kit.on('*', handler)
   try {
-    // Forwarder-only destinations: official RetryContext leaves `to` undefined so
-    // mint confirmation uses IRIS forwardState instead of a destination adapter.
-    return await kit.retry(normalizedResult, { from: wallet.adapter, to: undefined })
+    return await kit.retry(normalizedResult, {
+      from: wallet.adapter,
+      to: useForwarder ? undefined : destinationWallet.adapter,
+    })
   } finally {
     kit.off('*', handler)
   }
@@ -667,9 +796,11 @@ export function createTransferDraft(input, sourceAddress) {
     sourceAddress,
     sourceChain: getDefinition(input.environment, input.sourceId),
     destinationAddress: input.recipient.trim(),
+    destinationSignerAddress: input.destinationWalletAddress,
     destinationChain: getDefinition(input.environment, input.destinationId),
     speed: input.speed,
     maxFee: input.maxFee,
+    useForwarder: input.useForwarder,
   })
 }
 
