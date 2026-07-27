@@ -1280,45 +1280,166 @@ main {
   font-size: 11px;
 }
 
-.steps {
-  display: grid;
+.sheet-head-copy {
+  display: flex;
+  flex-direction: column;
   gap: 2px;
-  margin: 22px 0 14px;
+  min-width: 0;
+}
+.sheet-head-copy h3 {
+  margin: 0;
+}
+.step-status-label {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.01em;
+}
+.progress-track {
+  height: 4px;
+  margin: 0 0 14px;
+  border-radius: 99px;
+  background: var(--field-soft);
+  overflow: hidden;
+}
+.progress-track-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--green), var(--color-primary-light, var(--btn)));
+  transition: width 0.35s ease;
+}
+[data-theme='dark'] .progress-track-fill {
+  background: linear-gradient(90deg, var(--green), var(--color-dark-primary));
+}
+
+.steps {
+  list-style: none;
+  margin: 18px 0 14px;
+  padding: 0;
+  display: grid;
+  gap: 0;
 }
 .step {
+  position: relative;
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 10px;
-  padding: 10px;
-  border-radius: 12px;
+  gap: 12px;
+  padding: 11px 12px;
+  border-radius: 14px;
   color: var(--faint);
+  border: 1px solid transparent;
+}
+.step.pending {
+  opacity: 0.72;
 }
 .step.active {
   color: var(--text);
   background: var(--field);
+  border-color: var(--border-strong);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.02);
 }
-.step.complete { color: var(--green); }
+.step.complete {
+  color: var(--green);
+}
+.step-rail {
+  position: absolute;
+  left: 25px;
+  top: 40px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--border);
+  z-index: 0;
+}
+.step-rail.filled {
+  background: color-mix(in srgb, var(--green) 55%, var(--border));
+}
 .step-icon {
+  position: relative;
+  z-index: 1;
   width: 28px;
   height: 28px;
-  border: 1px solid currentColor;
+  border: 1.5px solid currentColor;
   border-radius: 50%;
   display: grid;
   place-items: center;
+  background: var(--surface);
+  flex-shrink: 0;
 }
-.step span:nth-child(2) {
+.step.active .step-icon {
+  border-color: var(--color-primary-light, var(--btn));
+  color: var(--color-primary-light, var(--btn));
+  background: var(--field);
+}
+[data-theme='dark'] .step.active .step-icon {
+  border-color: var(--color-dark-primary);
+  color: var(--color-dark-primary);
+}
+.step.complete .step-icon {
+  border-color: var(--green);
+  background: color-mix(in srgb, var(--green) 14%, var(--surface));
+  color: var(--green);
+}
+.step-num {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.step-copy {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
+  min-width: 0;
 }
-.step strong { font-size: 13px; font-weight: 600; }
-.step small { font-size: 11px; opacity: 0.7; }
+.step strong {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.step small {
+  font-size: 11px;
+  line-height: 1.35;
+  opacity: 0.78;
+  color: inherit;
+}
+.step.active small {
+  opacity: 0.9;
+  color: var(--text-body);
+}
+.step-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 4px 8px;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--color-primary-light, var(--btn)) 14%, transparent);
+  color: var(--color-primary-light, var(--btn));
+  white-space: nowrap;
+}
+[data-theme='dark'] .step-badge {
+  background: color-mix(in srgb, var(--color-dark-primary) 18%, transparent);
+  color: var(--color-dark-primary);
+}
+.step-badge.done {
+  background: color-mix(in srgb, var(--green) 14%, transparent);
+  color: var(--green);
+}
 .pulse-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: var(--green);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 45%, transparent);
+  animation: pulse-dot 1.4s ease-out infinite;
+}
+@keyframes pulse-dot {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 45%, transparent); }
+  70% { box-shadow: 0 0 0 8px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
 }
 
 .real-warning {

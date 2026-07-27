@@ -11,11 +11,9 @@ import {
   CircleCheck,
   Clock3,
   ExternalLink,
-  Flame,
   Info,
   LoaderCircle,
   Moon,
-  Radio,
   Sun,
   Wallet,
   X,
@@ -361,6 +359,16 @@ function WalletModal({ chain, environment, onClose, onConnected }) {
 
 const PHASE_INDEX = { ready: 0, approve: 0, burn: 1, attest: 2, mint: 3, success: 4 }
 
+const PHASE_HEADING = {
+  ready: 'Confirm transfer',
+  approve: 'Approve in wallet',
+  burn: 'Burning USDC',
+  attest: 'Waiting for attestation',
+  mint: 'Minting on destination',
+  success: 'Transfer complete',
+  error: 'Needs attention',
+}
+
 function ProgressModal({
   environment,
   source,
@@ -386,13 +394,44 @@ function ProgressModal({
 }) {
   const busy = ['approve', 'burn', 'attest', 'mint'].includes(phase)
   const phaseIndex = PHASE_INDEX[phase] ?? 0
+  const totalSteps = 4
+  const displayStep = phase === 'success' ? totalSteps : Math.min(phaseIndex + 1, totalSteps)
+  const progressPct = phase === 'success'
+    ? 100
+    : busy
+      ? Math.round((phaseIndex / totalSteps) * 100 + (100 / totalSteps) * 0.45)
+      : 0
   const steps = [
-    { title: 'Approve', detail: `Confirm in ${source.family === 'evm' ? 'EVM' : 'Solana'} wallet`, icon: Check },
-    { title: `Burn ${amount || '0'} USDC`, detail: `On ${source.name}`, icon: Flame },
-    { title: 'Attestation', detail: 'Circle signed message', icon: Radio },
-    { title: 'Mint', detail: `Native USDC on ${destination.name}`, icon: Check },
+    {
+      title: 'Approve',
+      detail: `Confirm in ${source.family === 'evm' ? 'EVM' : 'Solana'} wallet`,
+      activeDetail: `Waiting for ${source.family === 'evm' ? 'EVM' : 'Solana'} wallet confirmation`,
+    },
+    {
+      title: `Burn ${amount || '0'} USDC`,
+      detail: `On ${source.name}`,
+      activeDetail: `Confirm burn on ${source.name}`,
+    },
+    {
+      title: 'Attestation',
+      detail: 'Circle signed message',
+      activeDetail: 'Circle is signing the burn message',
+    },
+    {
+      title: 'Mint',
+      detail: `Native USDC on ${destination.name}`,
+      activeDetail: `Minting native USDC on ${destination.name}`,
+    },
   ]
   const transactionSteps = (result?.steps || []).filter((item) => item.txHash || item.explorerUrl)
+  const heading = PHASE_HEADING[phase] || 'Confirm transfer'
+  const stepStatusLabel = busy
+    ? `Step ${displayStep} of ${totalSteps}`
+    : phase === 'success'
+      ? 'All steps done'
+      : phase === 'error'
+        ? 'Paused'
+        : `${totalSteps} steps`
 
   useEffect(() => {
     if (!busy) return undefined
@@ -418,15 +457,30 @@ function ProgressModal({
         : `Start ${ENVIRONMENT_LABELS[environment]} transfer`
 
   return (
-    <div className="modal-layer" role="dialog" aria-modal="true">
+    <div className="modal-layer" role="dialog" aria-modal="true" aria-labelledby="progress-modal-title">
       <button className="modal-backdrop" onClick={busy ? undefined : onClose} aria-label="Close transfer dialog" disabled={busy} />
       <div className="sheet progress-sheet">
         <div className="sheet-head">
-          <h3>
-            {phase === 'success' ? 'Complete' : phase === 'error' ? 'Needs attention' : busy ? 'In progress' : 'Confirm transfer'}
-          </h3>
+          <div className="sheet-head-copy">
+            <h3 id="progress-modal-title">{heading}</h3>
+            {(busy || phase === 'success' || phase === 'error') && (
+              <p className="step-status-label">{stepStatusLabel}</p>
+            )}
+          </div>
           <button className="icon-button" onClick={onClose} aria-label="Close" disabled={busy}><X size={18} /></button>
         </div>
+        {(busy || phase === 'success') && (
+          <div
+            className="progress-track"
+            role="progressbar"
+            aria-valuenow={progressPct}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label={`Transfer progress ${progressPct}%`}
+          >
+            <span className="progress-track-fill" style={{ width: `${progressPct}%` }} />
+          </div>
+        )}
         {routeVerified
           ? (
             <div className="route-summary">
@@ -463,20 +517,32 @@ function ProgressModal({
             <strong>{receive} USDC</strong>
           </div>
         )}
-        <div className="steps">
+        <ol className="steps" aria-label="Transfer steps">
           {steps.map((item, index) => {
-            const Icon = item.icon
             const complete = phase === 'success' || index < phaseIndex
             const active = busy && index === phaseIndex
+            const detail = complete ? 'Done' : active ? item.activeDetail : item.detail
+            const stateClass = complete ? 'complete' : active ? 'active' : 'pending'
             return (
-              <div className={`step ${complete ? 'complete' : ''} ${active ? 'active' : ''}`} key={item.title}>
-                <span className="step-icon">{complete ? <Check size={15} /> : <Icon size={15} />}</span>
-                <span><strong>{item.title}</strong><small>{complete ? 'Done' : item.detail}</small></span>
-                {active && <span className="pulse-dot" />}
-              </div>
+              <li className={`step ${stateClass}`} key={item.title} aria-current={active ? 'step' : undefined}>
+                {index < steps.length - 1 && <span className={`step-rail ${complete ? 'filled' : ''}`} aria-hidden="true" />}
+                <span className="step-icon" aria-hidden="true">
+                  {complete
+                    ? <Check size={15} strokeWidth={2.5} />
+                    : active
+                      ? <LoaderCircle className="spin" size={15} />
+                      : <span className="step-num">{index + 1}</span>}
+                </span>
+                <span className="step-copy">
+                  <strong>{item.title}</strong>
+                  <small>{detail}</small>
+                </span>
+                {active && <span className="step-badge">Now</span>}
+                {complete && <span className="step-badge done">Done</span>}
+              </li>
             )
           })}
-        </div>
+        </ol>
         {transactionSteps.length > 0 && (
           <div className="tx-links">
             {transactionSteps.map((item, index) => {
