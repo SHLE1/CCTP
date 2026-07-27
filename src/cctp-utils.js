@@ -2,6 +2,7 @@
 
 export const USDC_DECIMALS = 6
 export const TRANSFER_STORAGE_VERSION = 2
+export const QUOTE_TTL_MS = 60_000
 
 export function parseUsdcToMicro(value) {
   const text = String(value ?? '').trim()
@@ -67,22 +68,187 @@ export function validateAmount(amount) {
   return ''
 }
 
+export function isAmountGreaterThanFee(amount, fee) {
+  try {
+    return parseUsdcToMicro(amount) > parseUsdcToMicro(fee || '0')
+  } catch {
+    return false
+  }
+}
+
+export function isQuoteFresh(quotedAt, now = Date.now(), ttl = QUOTE_TTL_MS) {
+  return Number.isFinite(quotedAt)
+    && quotedAt > 0
+    && Number.isFinite(now)
+    && now >= quotedAt
+    && now - quotedAt < ttl
+}
+
+export function safeExplorerUrl(value) {
+  if (typeof value !== 'string') return ''
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' ? url.href : ''
+  } catch {
+    return ''
+  }
+}
+
+export function quoteInputKey({
+  environment,
+  sourceId,
+  destinationId,
+  recipient,
+  amount,
+  speed,
+  walletAddress,
+}) {
+  return JSON.stringify([
+    String(environment || ''),
+    String(sourceId || ''),
+    String(destinationId || ''),
+    String(recipient || '').trim(),
+    String(amount || '').trim(),
+    String(speed || ''),
+    String(walletAddress || '').toLowerCase(),
+  ])
+}
+
+function chainIdentity(chain) {
+  if (!chain || typeof chain !== 'object') return ''
+  if (chain.chainId != null) return `evm:${String(chain.chainId)}`
+  return `chain:${String(chain.chain || chain.name || '')}`
+}
+
+export function isWalletCompatibleWithResult(result, wallet, expectedSourceChain) {
+  if (!result?.source?.address || !wallet?.address || !expectedSourceChain) return false
+  if (chainIdentity(result.source.chain) !== chainIdentity(expectedSourceChain)) return false
+
+  const expectedFamily = expectedSourceChain.type === 'evm' ? 'evm' : 'solana'
+  if (wallet.family !== expectedFamily) return false
+
+  return expectedFamily === 'evm'
+    ? result.source.address.toLowerCase() === wallet.address.toLowerCase()
+    : result.source.address === wallet.address
+}
+
+export function createBridgeResultDraft({
+  amount,
+  sourceAddress,
+  sourceChain,
+  destinationAddress,
+  destinationChain,
+  speed,
+  maxFee,
+}) {
+  return {
+    amount: String(amount).trim(),
+    token: 'USDC',
+    state: 'pending',
+    config: {
+      transferSpeed: speed === 'fast' ? 'FAST' : 'SLOW',
+      batchTransactions: false,
+      ...(maxFee ? { maxFee: String(maxFee).trim() } : {}),
+    },
+    provider: 'CCTPV2BridgingProvider',
+    source: {
+      address: sourceAddress,
+      chain: sourceChain,
+    },
+    destination: {
+      address: destinationAddress,
+      recipientAddress: destinationAddress,
+      useForwarder: true,
+      chain: destinationChain,
+    },
+    steps: [],
+  }
+}
+
+export function mergeBridgeEventIntoResult(result, payload) {
+  const candidate = payload?.values || payload?.step
+  if (!result || !candidate || typeof candidate !== 'object') return result
+
+  const name = candidate.name || payload?.method || payload?.name
+  if (!name) return result
+
+  const step = { ...candidate, name }
+  const steps = [...(result.steps || [])]
+  const lastIndex = steps.length - 1
+  if (
+    lastIndex >= 0
+    && steps[lastIndex]?.name === name
+    && steps[lastIndex]?.state === 'pending'
+  ) {
+    steps[lastIndex] = step
+  } else {
+    steps.push(step)
+  }
+
+  return {
+    ...result,
+    state: step.state === 'error' ? 'error' : 'pending',
+    steps,
+  }
+}
+
 /**
  * True when the object is a full Bridge Kit result that can be passed to kit.retry.
  * Summary-only (v1) snapshots are inspectable but not retryable.
  */
 export function isRetryableBridgeResult(result) {
+  if (
+    !result
+    || typeof result !== 'object'
+    || result.provider !== 'CCTPV2BridgingProvider'
+    || result.token !== 'USDC'
+    || (result.state !== 'pending' && result.state !== 'error')
+    || typeof result.source?.address !== 'string'
+    || typeof result.destination?.recipientAddress !== 'string'
+    || !result.source?.chain?.chain
+    || !result.source?.chain?.cctp
+    || !result.destination?.chain?.chain
+    || !result.destination?.chain?.cctp
+    || !Array.isArray(result.steps)
+    || !result.config
+    || (result.config.transferSpeed !== 'FAST' && result.config.transferSpeed !== 'SLOW')
+    || result.config.batchTransactions !== false
+    || result.config.customFee != null
+  ) {
+    return false
+  }
+  let amountMicro
+  try {
+    amountMicro = parseUsdcToMicro(result.amount)
+    const maxFeeMicro = parseUsdcToMicro(result.config.maxFee)
+    if (amountMicro <= 0n || maxFeeMicro <= 0n || maxFeeMicro >= amountMicro) return false
+  } catch {
+    return false
+  }
+
+  // Automatic retry is only safe once there is evidence that the burn was
+  // submitted. A pre-signing draft or approve-only failure can start over with
+  // a fresh quote; treating it as retryable would reuse a stale maxFee and an
+  // object Bridge Kit never returned.
+  const burnStep = result.steps.find((step) => /burn/i.test(String(step?.name || '')))
+  const definitivelyFailedCategories = new Set([
+    'failed_offchain',
+    'reverted_onchain',
+    'partial_reverted',
+    'chain_revert',
+  ])
   return Boolean(
-    result
-    && typeof result === 'object'
-    && typeof result.provider === 'string'
-    && result.source
-    && result.destination
-    && (result.source.chain?.chain || typeof result.source.chain === 'string' || result.source.chain?.name)
-    && (result.destination.chain?.chain || typeof result.destination.chain === 'string' || result.destination.chain?.name)
-    && Array.isArray(result.steps)
-    && result.state
-    && result.state !== 'success',
+    burnStep
+    && (
+      burnStep.state === 'success'
+      || (
+        !definitivelyFailedCategories.has(burnStep.errorCategory)
+        && (
+          typeof burnStep.txHash === 'string'
+          || typeof burnStep.explorerUrl === 'string'
+        )
+      )
+    ),
   )
 }
 

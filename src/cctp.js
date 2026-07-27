@@ -22,23 +22,33 @@ import {
 import { createViemAdapterFromProvider } from '@circle-fin/adapter-viem-v2'
 import { createSolanaAdapterFromProvider } from '@circle-fin/adapter-solana'
 import { Connection, PublicKey } from '@solana/web3.js'
-import { isAddress } from 'viem'
+import { formatUnits, isAddress, parseUnits } from 'viem'
 import {
   TRANSFER_STORAGE_VERSION,
+  createBridgeResultDraft,
   formatUsdcFromMicro,
   isRetryableBridgeResult,
+  isWalletCompatibleWithResult,
   serializeBridgeResult,
 } from './cctp-utils.js'
 
 export {
+  QUOTE_TTL_MS,
   TRANSFER_STORAGE_VERSION,
   USDC_DECIMALS,
   addUsdcAmounts,
+  createBridgeResultDraft,
   formatUsdcFromMicro,
+  isAmountGreaterThanFee,
   isRetryableBridgeResult,
+  isQuoteFresh,
+  isWalletCompatibleWithResult,
+  mergeBridgeEventIntoResult,
   parseUsdcToMicro,
+  quoteInputKey,
   quoteFeeBreakdown,
   quoteFees,
+  safeExplorerUrl,
   sanitizeAmountInput,
   serializeBridgeResult,
   subtractUsdcAmounts,
@@ -77,6 +87,9 @@ const EVM_DEFINITIONS = Object.fromEntries(
   ]),
 )
 const kit = new BridgeKit({ disableErrorReporting: true })
+const EVM_ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+const SOLANA_TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA')
+const SOLANA_ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
 
 function assertEnvironment(environment) {
   if (!DEFINITIONS[environment]) throw new Error(`Unsupported environment: ${environment}`)
@@ -92,6 +105,18 @@ export function getDefinition(environment, chainId) {
 export function listChainIds(environment) {
   assertEnvironment(environment)
   return Object.keys(DEFINITIONS[environment])
+}
+
+export function findChainIdForDefinition(environment, chain) {
+  assertEnvironment(environment)
+  if (!chain || typeof chain !== 'object') return null
+  const match = Object.entries(DEFINITIONS[environment]).find(([, definition]) => {
+    if (chain.chainId != null && definition.chainId != null) {
+      return Number(chain.chainId) === Number(definition.chainId)
+    }
+    return chain.chain === definition.chain
+  })
+  return match?.[0] || null
 }
 
 /** CCTP v2 Fast Transfer is available when the chain exposes fastConfirmations. */
@@ -169,12 +194,15 @@ async function switchEvmChain(definition, provider = window.ethereum) {
   }
 }
 
-export async function connectSourceWallet(environment, chainId, solanaWalletAdapter) {
+export async function connectSourceWallet(environment, chainId, walletProvider) {
   const definition = getDefinition(environment, chainId)
   if (definition.type === 'evm') {
-    const provider = window.ethereum
+    const provider = walletProvider || window.ethereum
     await switchEvmChain(definition, provider)
     const accounts = await provider.request({ method: 'eth_requestAccounts' })
+    if (!accounts?.[0] || !isAddress(accounts[0]) || accounts[0].toLowerCase() === EVM_ZERO_ADDRESS) {
+      throw new Error('The EVM wallet did not return a valid active account.')
+    }
     const adapter = await createViemAdapterFromProvider({
       provider,
       capabilities: { addressContext: 'user-controlled', supportedChains: EVM_DEFINITIONS[environment] },
@@ -188,8 +216,8 @@ export async function connectSourceWallet(environment, chainId, solanaWalletAdap
     }
   }
 
-  if (!solanaWalletAdapter) throw new Error('请选择一个支持 Wallet Standard 的 Solana 钱包。')
-  const provider = providerFromWalletAdapter(solanaWalletAdapter)
+  if (!walletProvider) throw new Error('请选择一个支持 Wallet Standard 的 Solana 钱包。')
+  const provider = providerFromWalletAdapter(walletProvider)
   const response = await provider.connect()
   const connection = new Connection(getSolanaRpcEndpoint(environment), 'confirmed')
   const adapter = await createSolanaAdapterFromProvider({
@@ -202,6 +230,41 @@ export async function connectSourceWallet(environment, chainId, solanaWalletAdap
     address: response.publicKey.toString(),
     provider,
     family: 'solana',
+  }
+}
+
+export function subscribeEvmProviders(onProvider) {
+  if (typeof window === 'undefined' || typeof onProvider !== 'function') return () => {}
+  const seenProviders = new WeakSet()
+  const publish = (info, provider) => {
+    if (!provider || typeof provider.request !== 'function' || seenProviders.has(provider)) return
+    seenProviders.add(provider)
+    onProvider({
+      info: {
+        uuid: String(info?.uuid || `legacy-${Date.now()}`).slice(0, 128),
+        name: String(info?.name || 'Browser wallet').slice(0, 80),
+        rdns: String(info?.rdns || '').slice(0, 120),
+      },
+      provider,
+    })
+  }
+  const handleAnnouncement = (event) => {
+    publish(event?.detail?.info, event?.detail?.provider)
+  }
+  window.addEventListener('eip6963:announceProvider', handleAnnouncement)
+  window.dispatchEvent(new window.Event('eip6963:requestProvider'))
+  const fallbackTimer = window.setTimeout(() => {
+    const legacyProviders = Array.isArray(window.ethereum?.providers)
+      ? window.ethereum.providers
+      : [window.ethereum]
+    legacyProviders.forEach((provider, index) => publish({
+      uuid: `legacy-${index}`,
+      name: provider?.isMetaMask ? 'MetaMask' : 'Browser wallet',
+    }, provider))
+  }, 100)
+  return () => {
+    window.clearTimeout(fallbackTimer)
+    window.removeEventListener('eip6963:announceProvider', handleAnnouncement)
   }
 }
 
@@ -226,14 +289,58 @@ export function attachEvmWalletListeners(provider, { onAccountsChanged, onChainC
   return () => {}
 }
 
+export async function assertSourceWalletReady(environment, chainId, wallet) {
+  const definition = getDefinition(environment, chainId)
+  const expectedFamily = definition.type === 'evm' ? 'evm' : 'solana'
+  if (!wallet?.address || wallet.family !== expectedFamily) {
+    throw new Error('The connected wallet does not match the selected source chain.')
+  }
+
+  if (expectedFamily === 'evm') {
+    if (typeof wallet.provider?.request !== 'function') {
+      throw new Error('The EVM wallet provider is no longer available.')
+    }
+    const [accounts, currentChainId] = await Promise.all([
+      wallet.provider.request({ method: 'eth_accounts' }),
+      wallet.provider.request({ method: 'eth_chainId' }),
+    ])
+    const currentAddress = accounts?.[0]
+    if (!currentAddress || currentAddress.toLowerCase() !== wallet.address.toLowerCase()) {
+      throw new Error('The active EVM wallet account changed. Reconnect the source wallet and request a fresh quote.')
+    }
+    let numericChainId
+    try {
+      numericChainId = Number(BigInt(currentChainId))
+    } catch {
+      throw new Error('The EVM wallet returned an invalid network identifier.')
+    }
+    if (numericChainId !== Number(definition.chainId)) {
+      throw new Error(`The EVM wallet is on chain ${numericChainId}, but ${definition.name} (${definition.chainId}) is required.`)
+    }
+    return true
+  }
+
+  const currentAddress = wallet.provider?.publicKey?.toString?.()
+  if (!wallet.provider?.isConnected || currentAddress !== wallet.address) {
+    throw new Error('The active Solana wallet changed or disconnected. Reconnect it before transferring.')
+  }
+  return true
+}
+
 export function validateRecipient(environment, chainId, address) {
   if (!address?.trim()) return '请输入目标链收款地址'
   const definition = getDefinition(environment, chainId)
-  if (definition.type === 'evm') return isAddress(address.trim()) ? '' : 'EVM 地址格式不正确'
+  if (definition.type === 'evm') {
+    const recipient = address.trim()
+    if (!isAddress(recipient)) return 'EVM 地址格式不正确'
+    if (recipient.toLowerCase() === EVM_ZERO_ADDRESS) return '不能使用 EVM 零地址作为收款地址'
+    return ''
+  }
   try {
     // Parsing is sufficient for client-side format validation. The bridge SDK
     // performs the authoritative route and recipient validation before signing.
-    new PublicKey(address.trim())
+    const recipient = new PublicKey(address.trim())
+    if (recipient.equals(PublicKey.default)) return '不能使用 Solana 默认地址作为收款地址'
     return ''
   } catch {
     return 'Solana 地址格式不正确'
@@ -261,7 +368,7 @@ async function evmJsonRpc(definition, method, params) {
   throw lastError || new Error('No EVM RPC endpoints available')
 }
 
-export async function fetchUsdcBalance(environment, chainId, address) {
+export async function fetchUsdcBalance(environment, chainId, address, provider) {
   if (!address) return null
   const definition = getDefinition(environment, chainId)
   if (!definition.usdcAddress) return null
@@ -269,25 +376,168 @@ export async function fetchUsdcBalance(environment, chainId, address) {
   if (definition.type === 'evm') {
     if (!isAddress(address)) return null
     const data = `0x70a08231${address.slice(2).toLowerCase().padStart(64, '0')}`
-    const result = await evmJsonRpc(definition, 'eth_call', [
-      { to: definition.usdcAddress, data },
-      'latest',
-    ])
+    const params = [{ to: definition.usdcAddress, data }, 'latest']
+    const result = typeof provider?.request === 'function'
+      ? await provider.request({ method: 'eth_call', params })
+      : await evmJsonRpc(definition, 'eth_call', params)
     return formatUsdcFromMicro(BigInt(result))
   }
 
   const connection = new Connection(getSolanaRpcEndpoint(environment), 'confirmed')
   const owner = new PublicKey(address)
   const mint = new PublicKey(definition.usdcAddress)
-  const accounts = await connection.getParsedTokenAccountsByOwner(owner, { mint })
-  const total = accounts.value.reduce((sum, item) => {
-    const amount = item.account.data.parsed?.info?.tokenAmount?.amount
-    return sum + BigInt(amount || '0')
-  }, 0n)
-  return formatUsdcFromMicro(total)
+  const [ata] = PublicKey.findProgramAddressSync(
+    [owner.toBuffer(), SOLANA_TOKEN_PROGRAM_ID.toBuffer(), mint.toBuffer()],
+    SOLANA_ASSOCIATED_TOKEN_PROGRAM_ID,
+  )
+  try {
+    const balance = await connection.getTokenAccountBalance(ata, 'confirmed')
+    return formatUsdcFromMicro(BigInt(balance.value.amount))
+  } catch (error) {
+    if (/could not find account|invalid param|not found/i.test(String(error?.message || error))) {
+      return '0'
+    }
+    throw error
+  }
 }
 
-function paramsFor({ environment, sourceId, destinationId, adapter, recipient, amount, speed }) {
+export async function checkSourceGasReadiness(environment, chainId, wallet, estimate) {
+  const definition = getDefinition(environment, chainId)
+  const sourceFees = (estimate?.gasFees || []).filter(
+    (item) => item?.blockchain === definition.chain,
+  )
+  if (!sourceFees.length) {
+    return {
+      ready: false,
+      error: `Could not verify the source-chain gas estimate for ${definition.name}. Request a fresh quote before transferring.`,
+    }
+  }
+
+  let estimatedGas = 0n
+  try {
+    for (const item of sourceFees) {
+      if (item.error || item.fees?.fee == null) throw new Error('gas estimate unavailable')
+      estimatedGas += parseUnits(String(item.fees.fee), definition.nativeCurrency.decimals)
+    }
+  } catch {
+    return {
+      ready: false,
+      error: `Could not estimate all source-chain transactions on ${definition.name}. Check the wallet balance and RPC, then request a fresh quote.`,
+    }
+  }
+  if (estimatedGas <= 0n) {
+    return {
+      ready: false,
+      error: `The source-chain gas estimate for ${definition.name} was zero or invalid. Request a fresh quote before transferring.`,
+    }
+  }
+
+  let gasBalance
+  try {
+    if (definition.type === 'evm') {
+      if (typeof wallet?.provider?.request !== 'function') throw new Error('wallet unavailable')
+      gasBalance = BigInt(await wallet.provider.request({
+        method: 'eth_getBalance',
+        params: [wallet.address, 'latest'],
+      }))
+    } else {
+      const connection = new Connection(getSolanaRpcEndpoint(environment), 'confirmed')
+      gasBalance = BigInt(await connection.getBalance(new PublicKey(wallet.address), 'confirmed'))
+    }
+  } catch {
+    return {
+      ready: false,
+      error: `Could not verify the ${definition.nativeCurrency.symbol} gas balance on ${definition.name}. Check the wallet and RPC, then request a fresh quote.`,
+    }
+  }
+
+  // Leave a 50% buffer for gas-price movement between estimation and signing.
+  const requiredGas = (estimatedGas * 150n + 99n) / 100n
+  if (gasBalance < requiredGas) {
+    return {
+      ready: false,
+      estimatedGas,
+      requiredGas,
+      gasBalance,
+      error: `Insufficient ${definition.nativeCurrency.symbol} for gas on ${definition.name}. Keep at least about ${formatUnits(requiredGas, definition.nativeCurrency.decimals)} ${definition.nativeCurrency.symbol} available.`,
+    }
+  }
+
+  return { ready: true, estimatedGas, requiredGas, gasBalance }
+}
+
+export async function checkDestinationReadiness(environment, chainId, address) {
+  const definition = getDefinition(environment, chainId)
+  if (definition.type !== 'solana') return { ready: true }
+
+  const owner = new PublicKey(address.trim())
+  const mint = new PublicKey(definition.usdcAddress)
+  const [ata] = PublicKey.findProgramAddressSync(
+    [owner.toBuffer(), SOLANA_TOKEN_PROGRAM_ID.toBuffer(), mint.toBuffer()],
+    SOLANA_ASSOCIATED_TOKEN_PROGRAM_ID,
+  )
+  const connection = new Connection(getSolanaRpcEndpoint(environment), 'confirmed')
+  const account = await connection.getAccountInfo(ata, 'confirmed')
+  if (!account || !account.owner.equals(SOLANA_TOKEN_PROGRAM_ID)) {
+    return {
+      ready: false,
+      ata: ata.toString(),
+      error: `The recipient does not have a USDC Associated Token Account (${ata.toString()}). Create/fund that ATA before bridging to Solana.`,
+    }
+  }
+  return { ready: true, ata: ata.toString() }
+}
+
+function addressesMatch(left, right, family) {
+  if (typeof left !== 'string' || typeof right !== 'string') return false
+  return family === 'evm'
+    ? left.toLowerCase() === right.toLowerCase()
+    : left === right
+}
+
+export function validateTransferEstimate(estimate, input, sourceAddress) {
+  if (!estimate || estimate.token !== 'USDC') {
+    return 'Bridge Kit did not return a valid USDC quote.'
+  }
+  const source = getDefinition(input.environment, input.sourceId)
+  const destination = getDefinition(input.environment, input.destinationId)
+  try {
+    if (parseUnits(String(estimate.amount), 6) !== parseUnits(String(input.amount), 6)) {
+      return 'The quoted amount does not match the requested transfer amount.'
+    }
+  } catch {
+    return 'Bridge Kit returned an invalid quoted amount.'
+  }
+  if (
+    estimate.source?.chain !== source.chain
+    || !addressesMatch(estimate.source?.address, sourceAddress, source.type)
+  ) {
+    return 'The quote does not match the selected source chain or wallet.'
+  }
+  const quotedRecipient = estimate.destination?.recipientAddress || estimate.destination?.address
+  if (
+    estimate.destination?.chain !== destination.chain
+    || !addressesMatch(quotedRecipient, input.recipient.trim(), destination.type)
+  ) {
+    return 'The quote does not match the selected destination chain or recipient.'
+  }
+
+  const fees = estimate.fees || []
+  if (fees.some((fee) => fee?.error || fee?.amount == null)) {
+    return 'Bridge Kit could not verify all CCTP and Forwarding Service fees. Request a fresh quote.'
+  }
+  const forwarderFee = fees.find((fee) => fee?.type === 'forwarder')
+  try {
+    if (!forwarderFee || parseUnits(String(forwarderFee.amount), 6) <= 0n) {
+      return 'The Forwarding Service fee is missing from the quote. The transfer was blocked before signing.'
+    }
+  } catch {
+    return 'Bridge Kit returned an invalid Forwarding Service fee.'
+  }
+  return ''
+}
+
+function paramsFor({ environment, sourceId, destinationId, adapter, recipient, amount, speed, maxFee }) {
   return {
     from: { adapter, chain: getDefinition(environment, sourceId).chain },
     to: {
@@ -300,6 +550,7 @@ function paramsFor({ environment, sourceId, destinationId, adapter, recipient, a
     config: {
       transferSpeed: speed === 'fast' ? 'FAST' : 'SLOW',
       batchTransactions: false,
+      ...(maxFee ? { maxFee: String(maxFee).trim() } : {}),
     },
   }
 }
@@ -318,16 +569,58 @@ export async function executeTransfer(input, onEvent) {
   }
 }
 
-export async function retryTransfer(result, adapter, onEvent) {
+export function normalizeRetryResult(result, environment) {
   if (!isRetryableBridgeResult(result)) {
-    throw new Error('当前保存的转账记录不完整，无法自动重试。请用浏览器中的交易链接在区块浏览器核对，或重新发起转账。')
+    throw new Error('The saved transfer is incomplete or does not satisfy the current retry safety rules.')
+  }
+  const sourceId = findChainIdForDefinition(environment, result.source.chain)
+  const destinationId = findChainIdForDefinition(environment, result.destination.chain)
+  if (!sourceId || !destinationId || sourceId === destinationId) {
+    throw new Error('The saved transfer route is invalid for the selected environment.')
+  }
+  const sourceChain = getDefinition(environment, sourceId)
+  const destinationChain = getDefinition(environment, destinationId)
+  const sourceAddressError = validateRecipient(environment, sourceId, result.source.address)
+  const recipient = result.destination.recipientAddress
+  const recipientError = validateRecipient(environment, destinationId, recipient)
+  if (sourceAddressError || recipientError) {
+    throw new Error('The saved source or destination address failed validation.')
+  }
+
+  const sanitized = serializeBridgeResult(result)
+  return {
+    ...sanitized,
+    config: {
+      transferSpeed: result.config.transferSpeed,
+      batchTransactions: false,
+      maxFee: String(result.config.maxFee),
+    },
+    source: {
+      address: result.source.address,
+      chain: sourceChain,
+    },
+    destination: {
+      address: recipient,
+      recipientAddress: recipient,
+      useForwarder: true,
+      chain: destinationChain,
+    },
+  }
+}
+
+export async function retryTransfer(result, wallet, environment, onEvent) {
+  const normalizedResult = normalizeRetryResult(result, environment)
+  const sourceId = findChainIdForDefinition(environment, normalizedResult.source.chain)
+  const expectedSource = sourceId ? getDefinition(environment, sourceId) : null
+  if (!expectedSource || !isWalletCompatibleWithResult(normalizedResult, wallet, expectedSource)) {
+    throw new Error('请连接原转账使用的来源链钱包和账户后再重试。当前钱包与保存的来源地址或网络不匹配。')
   }
   const handler = (payload) => onEvent?.(payload)
   kit.on('*', handler)
   try {
     // Forwarder-only destinations: official RetryContext leaves `to` undefined so
     // mint confirmation uses IRIS forwardState instead of a destination adapter.
-    return await kit.retry(result, { from: adapter, to: undefined })
+    return await kit.retry(normalizedResult, { from: wallet.adapter, to: undefined })
   } finally {
     kit.off('*', handler)
   }
@@ -345,8 +638,31 @@ function transferStorageKey(environment) {
   return `relay:last-transfer:${environment}`
 }
 
+export function isTransferStorageAvailable(environment) {
+  try {
+    const key = `${transferStorageKey(environment)}:probe`
+    localStorage.setItem(key, '1')
+    localStorage.removeItem(key)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function createTransferDraft(input, sourceAddress) {
+  return createBridgeResultDraft({
+    amount: input.amount,
+    sourceAddress,
+    sourceChain: getDefinition(input.environment, input.sourceId),
+    destinationAddress: input.recipient.trim(),
+    destinationChain: getDefinition(input.environment, input.destinationId),
+    speed: input.speed,
+    maxFee: input.maxFee,
+  })
+}
+
 export function persistTransfer(result, environment) {
-  if (!result) return
+  if (!result) return false
   const payload = {
     version: TRANSFER_STORAGE_VERSION,
     environment,
@@ -365,6 +681,7 @@ export function persistTransfer(result, environment) {
   }
   try {
     localStorage.setItem(transferStorageKey(environment), JSON.stringify(payload))
+    return true
   } catch {
     try {
       const slim = {
@@ -375,20 +692,28 @@ export function persistTransfer(result, environment) {
         },
       }
       localStorage.setItem(transferStorageKey(environment), JSON.stringify(slim))
+      return true
     } catch {
-      localStorage.setItem(transferStorageKey(environment), JSON.stringify({
-        version: 1,
-        environment,
-        updatedAt: payload.updatedAt,
-        ...payload.summary,
-      }))
+      try {
+        localStorage.setItem(transferStorageKey(environment), JSON.stringify({
+          version: 1,
+          environment,
+          updatedAt: payload.updatedAt,
+          ...payload.summary,
+        }))
+        // Explorer links were preserved, but this summary is not sufficient for
+        // kit.retry. Report failure so the UI warns that automatic recovery is off.
+        return false
+      } catch {
+        return false
+      }
     }
   }
 }
 
 /**
  * Load the last transfer for an environment.
- * @returns {{ result: object|null, retryable: boolean, summary: object|null, updatedAt?: string, legacy?: boolean } | null}
+ * @returns {{ result: object|null, retryable: boolean, summary: object|null, updatedAt?: string, environment?: string, legacy?: boolean } | null}
  */
 export function loadPersistedTransfer(environment) {
   let raw
@@ -401,9 +726,19 @@ export function loadPersistedTransfer(environment) {
   try {
     const parsed = JSON.parse(raw)
     if (parsed?.version === TRANSFER_STORAGE_VERSION && parsed.result) {
+      let result = parsed.result
+      let retryable = false
+      if (isRetryableBridgeResult(parsed.result)) {
+        try {
+          result = normalizeRetryResult(parsed.result, environment)
+          retryable = true
+        } catch {
+          retryable = false
+        }
+      }
       return {
-        result: parsed.result,
-        retryable: isRetryableBridgeResult(parsed.result),
+        result,
+        retryable,
         summary: parsed.summary || null,
         updatedAt: parsed.updatedAt,
         environment: parsed.environment || environment,
