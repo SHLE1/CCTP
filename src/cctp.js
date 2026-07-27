@@ -249,9 +249,14 @@ function sanitizeWalletIcon(icon) {
 export function subscribeEvmProviders(onProvider) {
   if (typeof window === 'undefined' || typeof onProvider !== 'function') return () => {}
   const seenProviders = new WeakSet()
-  const publish = (info, provider) => {
+  // When any wallet announces via EIP-6963, skip window.ethereum legacy fallback.
+  // MetaMask (and others) inject both; the legacy object is a different reference, so
+  // WeakSet alone cannot dedupe and the list would show MetaMask twice.
+  let eip6963Count = 0
+  const publish = (info, provider, { viaEip6963 = false } = {}) => {
     if (!provider || typeof provider.request !== 'function' || seenProviders.has(provider)) return
     seenProviders.add(provider)
+    if (viaEip6963) eip6963Count += 1
     onProvider({
       info: {
         uuid: String(info?.uuid || `legacy-${Date.now()}`).slice(0, 128),
@@ -263,11 +268,14 @@ export function subscribeEvmProviders(onProvider) {
     })
   }
   const handleAnnouncement = (event) => {
-    publish(event?.detail?.info, event?.detail?.provider)
+    publish(event?.detail?.info, event?.detail?.provider, { viaEip6963: true })
   }
   window.addEventListener('eip6963:announceProvider', handleAnnouncement)
   window.dispatchEvent(new window.Event('eip6963:requestProvider'))
   const fallbackTimer = window.setTimeout(() => {
+    // Prefer discovery via EIP-6963. Only fall back when nothing announced
+    // (old extensions that never implemented multi-wallet discovery).
+    if (eip6963Count > 0) return
     const legacyProviders = Array.isArray(window.ethereum?.providers)
       ? window.ethereum.providers
       : [window.ethereum]
