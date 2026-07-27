@@ -7,6 +7,9 @@ import {
   ArrowRight,
   Check,
   ChevronRight,
+  CircleAlert,
+  CircleCheck,
+  Clock3,
   ExternalLink,
   Flame,
   Info,
@@ -39,6 +42,7 @@ import {
   isQuoteFresh,
   isTransferStorageAvailable,
   isWalletCompatibleWithResult,
+  loadTransferHistory,
   loadPersistedTransfer,
   mergeBridgeEventIntoResult,
   parseUsdcToMicro,
@@ -504,7 +508,7 @@ function ProgressModal({
   )
 }
 
-function BridgeCard({ environment, onEnvironmentChange, chains }) {
+function BridgeCard({ environment, onEnvironmentChange, chains, resumeRequest = 0 }) {
   const solanaWalletState = useWallet()
   const [sourceId, setSourceId] = useState('base')
   const [destinationId, setDestinationId] = useState('solana')
@@ -535,6 +539,7 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
   const quoteKeyRef = useRef('')
   const activeTransferRef = useRef(null)
   const transferInFlightRef = useRef(false)
+  const handledResumeRequestRef = useRef(0)
   const source = findChain(chains, sourceId)
   const destination = findChain(chains, destinationId)
   const useForwarder = settlementMode === 'orbit'
@@ -606,6 +611,12 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
       )
     ),
   )
+
+  useEffect(() => {
+    if (!resumeRequest || handledResumeRequestRef.current === resumeRequest) return
+    handledResumeRequestRef.current = resumeRequest
+    resumeLastTransfer()
+  }, [resumeRequest])
 
   useEffect(() => {
     quoteRequestRef.current += 1
@@ -1505,6 +1516,156 @@ function BridgeCard({ environment, onEnvironmentChange, chains }) {
   )
 }
 
+function formatHistoryDate(value) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Unknown'
+  return new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date).replace(',', '')
+}
+
+function HistoryStatus({ state }) {
+  if (state === 'success') {
+    return <span className="history-status success"><CircleCheck size={17} />Fulfilled</span>
+  }
+  if (state === 'error') {
+    return <span className="history-status error"><CircleAlert size={17} />Needs attention</span>
+  }
+  return <span className="history-status pending"><Clock3 size={17} />Processing</span>
+}
+
+function HistoryChain({ chains, chainId }) {
+  const chain = findChain(chains, chainId) || {
+    id: chainId,
+    name: chainId || 'Unknown',
+    color: '#7a6e6d',
+  }
+  return (
+    <span className="history-chain">
+      <ChainMark chain={chain} small />
+      <span>{chain.name}</span>
+    </span>
+  )
+}
+
+function TransactionLinks({ links }) {
+  const safeLinks = (links || []).filter((item) => safeExplorerUrl(item?.url))
+  if (!safeLinks.length) return <span className="history-action-muted">Pending</span>
+  if (safeLinks.length === 1) {
+    return (
+      <a
+        className="history-action"
+        href={safeExplorerUrl(safeLinks[0].url)}
+        target="_blank"
+        rel="noreferrer"
+      >
+        View transaction <ExternalLink size={13} />
+      </a>
+    )
+  }
+  return (
+    <details className="history-action-menu">
+      <summary>View transactions <ChevronRight size={13} /></summary>
+      <div>
+        {safeLinks.map((item, index) => (
+          <a
+            href={safeExplorerUrl(item.url)}
+            target="_blank"
+            rel="noreferrer"
+            key={`${item.url}-${index}`}
+          >
+            {item.label || `Transaction ${index + 1}`}
+            <ExternalLink size={12} />
+          </a>
+        ))}
+      </div>
+    </details>
+  )
+}
+
+function TransferHistory({ environment, chains, onResume }) {
+  const [records, setRecords] = useState(() => loadTransferHistory(environment))
+
+  useEffect(() => {
+    const refresh = (event) => {
+      if (!event?.detail?.environment || event.detail.environment === environment) {
+        setRecords(loadTransferHistory(environment))
+      }
+    }
+    refresh()
+    window.addEventListener('relay:transfer-history-updated', refresh)
+    return () => window.removeEventListener('relay:transfer-history-updated', refresh)
+  }, [environment])
+
+  return (
+    <section className="history-section" aria-labelledby="history-title">
+      <div className="history-heading">
+        <div>
+          <p className="section-kicker">{ENVIRONMENT_LABELS[environment]} activity</p>
+          <h2 id="history-title">Recent transfers</h2>
+        </div>
+        <span>Saved in this browser</span>
+      </div>
+
+      {records.length ? (
+        <div className="history-table" role="table" aria-label={`${ENVIRONMENT_LABELS[environment]} transfer history`}>
+          <div className="history-table-head" role="row">
+            <span role="columnheader">Time</span>
+            <span role="columnheader">Source</span>
+            <span role="columnheader">Destination</span>
+            <span role="columnheader">Amount</span>
+            <span role="columnheader">Status</span>
+            <span role="columnheader" aria-label="Actions" />
+          </div>
+          <div className="history-table-body" role="rowgroup">
+            {records.map((record, index) => (
+              <div className="history-row" role="row" key={record.id}>
+                <time role="cell" dateTime={record.createdAt} data-label="Time">
+                  {formatHistoryDate(record.createdAt)}
+                </time>
+                <span role="cell" data-label="Source">
+                  <HistoryChain chains={chains} chainId={record.sourceId} />
+                </span>
+                <span role="cell" data-label="Destination">
+                  <HistoryChain chains={chains} chainId={record.destinationId} />
+                </span>
+                <span className="history-amount" role="cell" data-label="Amount">
+                  {record.amount || '0'}
+                  <img src={USDC_ICON} alt="USDC" width="18" height="18" />
+                </span>
+                <span role="cell" data-label="Status">
+                  <HistoryStatus state={record.state} />
+                </span>
+                <span className="history-actions" role="cell">
+                  {index === 0 && record.retryable && (
+                    <button type="button" className="history-action secondary" onClick={onResume}>
+                      Resume
+                    </button>
+                  )}
+                  <TransactionLinks links={record.explorerLinks} />
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="history-empty">
+          <Clock3 size={21} />
+          <div>
+            <strong>No transfers yet</strong>
+            <p>Your completed and resumable {ENVIRONMENT_LABELS[environment]} transfers will appear here.</p>
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
 function resolveInitialTheme() {
   try {
     const saved = localStorage.getItem('relay:theme')
@@ -1528,6 +1689,7 @@ function applyTheme(theme) {
 function App({ environment, setEnvironment }) {
   const chains = useMemo(() => makeChains(environment), [environment])
   const [theme, setTheme] = useState(resolveInitialTheme)
+  const [resumeRequest, setResumeRequest] = useState(0)
 
   useEffect(() => {
     applyTheme(theme)
@@ -1570,8 +1732,22 @@ function App({ environment, setEnvironment }) {
       </header>
 
       <main>
-        <BridgeCard environment={environment} onEnvironmentChange={setEnvironment} chains={chains} />
+        <BridgeCard
+          environment={environment}
+          onEnvironmentChange={setEnvironment}
+          chains={chains}
+          resumeRequest={resumeRequest}
+        />
         <p className="footnote">No interface fee. Self-claim uses destination gas; Orbit and CCTP fees apply only when quoted.</p>
+
+        <TransferHistory
+          environment={environment}
+          chains={chains}
+          onResume={() => {
+            setResumeRequest((current) => current + 1)
+            document.getElementById('bridge')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          }}
+        />
 
         <section className="faq" aria-label="Frequently asked questions">
           <h2>FAQ</h2>

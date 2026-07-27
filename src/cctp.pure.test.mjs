@@ -25,6 +25,7 @@ import {
   findChainIdForDefinition,
   getDefinition,
   isTransferStorageAvailable,
+  loadTransferHistory,
   normalizeRetryResult,
   persistTransfer,
   validateRecipient,
@@ -473,6 +474,66 @@ describe('mainnet transfer safety invariants', () => {
       assert.equal(isTransferStorageAvailable('mainnet'), false)
       assert.doesNotThrow(() => persistTransfer(draft, 'mainnet'))
       assert.equal(persistTransfer(draft, 'mainnet'), false)
+    } finally {
+      if (previousStorageDescriptor) {
+        Object.defineProperty(globalThis, 'localStorage', previousStorageDescriptor)
+      } else {
+        delete globalThis.localStorage
+      }
+    }
+  })
+
+  it('upserts transfer progress into bounded browser history', () => {
+    const previousStorageDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+    const entries = new Map()
+    try {
+      Object.defineProperty(globalThis, 'localStorage', {
+        configurable: true,
+        value: {
+          getItem(key) {
+            return entries.get(key) ?? null
+          },
+          setItem(key, value) {
+            entries.set(key, String(value))
+          },
+          removeItem(key) {
+            entries.delete(key)
+          },
+        },
+      })
+      const draft = createTransferDraft({
+        environment: 'testnet',
+        sourceId: 'base',
+        destinationId: 'solana',
+        amount: '12.5',
+        recipient: 'So11111111111111111111111111111111111111112',
+        destinationWalletAddress: 'So11111111111111111111111111111111111111112',
+        speed: 'fast',
+        maxFee: '0.1',
+        useForwarder: true,
+      }, '0x1111111111111111111111111111111111111111')
+
+      assert.equal(persistTransfer(draft, 'testnet'), true)
+      assert.equal(loadTransferHistory('testnet').length, 1)
+
+      const completed = {
+        ...draft,
+        state: 'success',
+        steps: [{
+          name: 'burn',
+          state: 'success',
+          txHash: '0xabc',
+          explorerUrl: 'https://sepolia.basescan.org/tx/0xabc',
+        }],
+      }
+      assert.equal(persistTransfer(completed, 'testnet'), true)
+      const history = loadTransferHistory('testnet')
+      assert.equal(history.length, 1)
+      assert.equal(history[0].state, 'success')
+      assert.equal(history[0].amount, '12.5')
+      assert.equal(history[0].sourceId, 'base')
+      assert.equal(history[0].destinationId, 'solana')
+      assert.equal(history[0].explorerLinks[0].url, 'https://sepolia.basescan.org/tx/0xabc')
     } finally {
       if (previousStorageDescriptor) {
         Object.defineProperty(globalThis, 'localStorage', previousStorageDescriptor)

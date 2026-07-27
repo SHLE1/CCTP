@@ -30,6 +30,7 @@ import {
   isDestinationWalletCompatibleWithResult,
   isRetryableBridgeResult,
   isWalletCompatibleWithResult,
+  safeExplorerUrl,
   serializeBridgeResult,
 } from './cctp-utils.js'
 
@@ -779,6 +780,129 @@ function transferStorageKey(environment) {
   return `relay:last-transfer:${environment}`
 }
 
+const TRANSFER_HISTORY_LIMIT = 20
+
+function transferHistoryStorageKey(environment) {
+  return `relay:transfer-history:${environment}`
+}
+
+function historyFingerprint(result, environment) {
+  const sourceId = findChainIdForDefinition(environment, result?.source?.chain)
+  const destinationId = findChainIdForDefinition(environment, result?.destination?.chain)
+  return [
+    sourceId,
+    destinationId,
+    String(result?.source?.address || '').toLowerCase(),
+    String(result?.destination?.recipientAddress || result?.destination?.address || '').toLowerCase(),
+    String(result?.amount || ''),
+  ].join(':')
+}
+
+function historyExplorerLinks(result) {
+  const seen = new Set()
+  return (result?.steps || []).flatMap((step, index) => {
+    const url = safeExplorerUrl(step?.explorerUrl)
+    if (!url || seen.has(url)) return []
+    seen.add(url)
+    return [{
+      label: String(step?.name || `Transaction ${index + 1}`).slice(0, 80),
+      url,
+    }]
+  })
+}
+
+function historyRecordFromResult(result, environment, existing = null, updatedAt = new Date().toISOString()) {
+  if (!result || typeof result !== 'object') return null
+  const sourceId = findChainIdForDefinition(environment, result.source?.chain)
+  const destinationId = findChainIdForDefinition(environment, result.destination?.chain)
+  if (!sourceId || !destinationId) return null
+  const txHashes = (result.steps || [])
+    .map((step) => String(step?.txHash || '').trim())
+    .filter(Boolean)
+    .slice(0, 8)
+  return {
+    id: existing?.id || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`,
+    environment,
+    createdAt: existing?.createdAt || updatedAt,
+    updatedAt,
+    fingerprint: historyFingerprint(result, environment),
+    state: ['success', 'pending', 'error'].includes(result.state) ? result.state : 'pending',
+    amount: String(result.amount || '').slice(0, 80),
+    sourceId,
+    destinationId,
+    retryable: isRetryableBridgeResult(result),
+    explorerLinks: historyExplorerLinks(result),
+    txHashes,
+  }
+}
+
+function readTransferHistory(environment) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(transferHistoryStorageKey(environment)) || '[]')
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((item) => (
+      item
+      && typeof item === 'object'
+      && item.environment === environment
+      && typeof item.id === 'string'
+      && typeof item.createdAt === 'string'
+      && typeof item.updatedAt === 'string'
+      && typeof item.amount === 'string'
+      && typeof item.sourceId === 'string'
+      && typeof item.destinationId === 'string'
+      && ['success', 'pending', 'error'].includes(item.state)
+    )).slice(0, TRANSFER_HISTORY_LIMIT)
+  } catch {
+    return []
+  }
+}
+
+function persistTransferHistory(result, environment, updatedAt) {
+  try {
+    const history = readTransferHistory(environment)
+    const incomingHashes = new Set(
+      (result?.steps || []).map((step) => String(step?.txHash || '').trim()).filter(Boolean),
+    )
+    const fingerprint = historyFingerprint(result, environment)
+    const existingIndex = history.findIndex((item) => {
+      const sharesTransaction = (item.txHashes || []).some((hash) => incomingHashes.has(hash))
+      if (sharesTransaction) return true
+      return item.state === 'pending' && item.fingerprint === fingerprint
+    })
+    const existing = existingIndex >= 0 ? history[existingIndex] : null
+    const record = historyRecordFromResult(result, environment, existing, updatedAt)
+    if (!record) return
+    const next = existingIndex >= 0
+      ? [record, ...history.filter((_, index) => index !== existingIndex)]
+      : [record, ...history]
+    localStorage.setItem(
+      transferHistoryStorageKey(environment),
+      JSON.stringify(next.slice(0, TRANSFER_HISTORY_LIMIT)),
+    )
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('relay:transfer-history-updated', {
+        detail: { environment },
+      }))
+    }
+  } catch {
+    // Recovery storage remains the source of truth when history storage is unavailable.
+  }
+}
+
+export function loadTransferHistory(environment) {
+  const history = readTransferHistory(environment)
+  if (history.length) return history
+
+  const saved = loadPersistedTransfer(environment)
+  const fallback = historyRecordFromResult(
+    saved?.result,
+    environment,
+    null,
+    saved?.updatedAt || new Date().toISOString(),
+  )
+  return fallback ? [fallback] : []
+}
+
 export function isTransferStorageAvailable(environment) {
   try {
     const key = `${transferStorageKey(environment)}:probe`
@@ -806,10 +930,11 @@ export function createTransferDraft(input, sourceAddress) {
 
 export function persistTransfer(result, environment) {
   if (!result) return false
+  const updatedAt = new Date().toISOString()
   const payload = {
     version: TRANSFER_STORAGE_VERSION,
     environment,
-    updatedAt: new Date().toISOString(),
+    updatedAt,
     result: serializeBridgeResult(result),
     summary: {
       state: result.state,
@@ -824,6 +949,7 @@ export function persistTransfer(result, environment) {
   }
   try {
     localStorage.setItem(transferStorageKey(environment), JSON.stringify(payload))
+    persistTransferHistory(result, environment, updatedAt)
     return true
   } catch {
     try {
@@ -835,6 +961,7 @@ export function persistTransfer(result, environment) {
         },
       }
       localStorage.setItem(transferStorageKey(environment), JSON.stringify(slim))
+      persistTransferHistory(result, environment, updatedAt)
       return true
     } catch {
       try {
@@ -844,6 +971,7 @@ export function persistTransfer(result, environment) {
           updatedAt: payload.updatedAt,
           ...payload.summary,
         }))
+        persistTransferHistory(result, environment, updatedAt)
         // Explorer links were preserved, but this summary is not sufficient for
         // kit.retry. Report failure so the UI warns that automatic recovery is off.
         return false
