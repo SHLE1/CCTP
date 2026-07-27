@@ -129,7 +129,6 @@ function ConfirmationDialog({ action, busy, confirmed, onCancel, onConfirm, onCo
       <div className="sheet lookup-confirm-sheet">
         <div className="sheet-head">
           <div className="sheet-head-copy">
-            <p className="section-kicker">Solana account action</p>
             <h3 id="lookup-confirm-title">
               {deactivating ? 'Deactivate Lookup Table' : 'Close Lookup Table'}
             </h3>
@@ -311,7 +310,6 @@ export default function LookupTableManager({ environment, onClose }) {
     <section className="lookup-section" aria-labelledby="lookup-title">
       <div className="lookup-heading">
         <div>
-          <p className="section-kicker">Solana account recovery</p>
           <h2 id="lookup-title">Recover rent</h2>
           <p className="lookup-heading-sub">
             Deactivate unused Lookup Tables, then close them to reclaim SOL rent.

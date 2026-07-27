@@ -1690,7 +1690,6 @@ function TransferHistory({ environment, chains, onResume }) {
     <section className="history-section" aria-labelledby="history-title">
       <div className="history-heading">
         <div>
-          <p className="section-kicker">{ENVIRONMENT_LABEL} activity</p>
           <h2 id="history-title">Recent transfers</h2>
         </div>
         <span>Saved in this browser</span>
@@ -1869,13 +1868,16 @@ function App({ environment }) {
 
   return (
     <div className="app">
-      <div className="bg-layer" aria-hidden="true">
-        <div className="bg-grid" />
-      </div>
-
       <header className="topbar">
         <a className="brand" href="#">
-          <span className="brand-mark" aria-hidden="true" />
+          <img
+            className="brand-mark"
+            src={USDC_ICON}
+            alt=""
+            width={22}
+            height={22}
+            draggable={false}
+          />
           Relay
         </a>
         <div className="topbar-right">

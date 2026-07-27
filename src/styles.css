@@ -90,7 +90,7 @@
   --warn-border: #4a3c14;
   --green: #34d399;
   --modal-backdrop: rgba(0, 0, 0, 0.65);
-  --shadow: 0 0 100px var(--color-dark-primary-soft), 0 20px 50px rgba(0, 0, 0, 0.5);
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
   --mainnet-fg: #fbbf24;
   --mainnet-border: #5a4a20;
   --mainnet-bg: #2a2210;
@@ -164,25 +164,6 @@ a { color: inherit; text-decoration: none; }
   color: var(--text);
 }
 
-/* Soft grid background (original, no third-party art) */
-.bg-layer {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  overflow: hidden;
-}
-.bg-grid {
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(color-mix(in srgb, var(--text) 5%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--text) 5%, transparent) 1px, transparent 1px);
-  background-size: 64px 64px;
-  mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, black 15%, transparent 75%);
-  opacity: 0.9;
-}
-
 .topbar {
   position: relative;
   z-index: 20;
@@ -202,11 +183,13 @@ a { color: inherit; text-decoration: none; }
   color: var(--text);
 }
 .brand-mark {
-  width: 18px;
-  height: 18px;
-  border-radius: 5px;
-  background: var(--btn);
-  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--btn-text) 20%, transparent);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+  flex-shrink: 0;
+  background: #2775ca;
 }
 .topbar-right {
   display: flex;
@@ -757,14 +740,6 @@ main {
   color: var(--faint);
   font-size: 11px;
   font-weight: 600;
-}
-.section-kicker {
-  margin: 0;
-  color: var(--pill-fg);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
 }
 .history-toolbar {
   display: flex;
@@ -1491,7 +1466,6 @@ main {
 .lookup-confirm-layer { z-index: 110; }
 .lookup-confirm-sheet { width: min(440px, 100%); }
 .lookup-confirm-sheet .sheet-head { align-items: flex-start; }
-.lookup-confirm-sheet .section-kicker { margin-bottom: 3px; }
 .lookup-confirm-symbol {
   width: 44px;
   height: 44px;
@@ -1976,11 +1950,8 @@ main {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--green), var(--color-primary-light, var(--btn)));
-  transition: width 0.35s ease;
-}
-[data-theme='dark'] .progress-track-fill {
-  background: linear-gradient(90deg, var(--green), var(--color-dark-primary));
+  background: var(--green);
+  transition: width 0.2s ease;
 }
 
 .steps {
@@ -2097,20 +2068,6 @@ main {
   background: color-mix(in srgb, var(--green) 14%, transparent);
   color: var(--green);
 }
-.pulse-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--green);
-  box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 45%, transparent);
-  animation: pulse-dot 1.4s ease-out infinite;
-}
-@keyframes pulse-dot {
-  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 45%, transparent); }
-  70% { box-shadow: 0 0 0 8px transparent; }
-  100% { box-shadow: 0 0 0 0 transparent; }
-}
-
 .real-warning {
   display: flex;
   gap: 8px;
