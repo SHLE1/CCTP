@@ -244,10 +244,16 @@ function ChainSelect({ chains, label, value, otherValue, onChange }) {
 }
 
 function SolanaWalletConnector({ chain, environment, onConnected }) {
-  const { wallet, wallets, connected, connecting, publicKey } = useWallet()
+  const { wallet, wallets, connected, connecting, publicKey, connect } = useWallet()
   const [message, setMessage] = useState('')
   const [preparing, setPreparing] = useState(false)
   const handledConnection = useRef('')
+
+  useEffect(() => {
+    if (!wallet?.adapter || connected || connecting) return
+    setMessage('')
+    connect().catch((error) => setMessage(friendlyError(error)))
+  }, [connect, connected, connecting, wallet])
 
   useEffect(() => {
     if (!connected || !wallet?.adapter || !publicKey) return
