@@ -19,6 +19,7 @@ import {
   safeExplorerUrl,
   sanitizeAmountInput,
   serializeBridgeResult,
+  shouldAutoQuote,
   subtractUsdcAmounts,
   validateAmount,
 } from './cctp-utils.js'
@@ -32,6 +33,7 @@ import {
   loadTransferHistory,
   normalizeRetryResult,
   persistTransfer,
+  switchConnectedEvmWallet,
   validateRecipient,
   validateTransferEstimate,
 } from './cctp.js'
@@ -194,6 +196,29 @@ describe('mainnet transfer safety invariants', () => {
     // Fee breakdown still works from retained payload during refresh/error.
     assert.equal(quoteFeeBreakdown(loading.data).total, '0.1')
     assert.equal(quoteFeeBreakdown(failed.data).total, '0.1')
+  })
+
+  it('automatically quotes only when every transfer prerequisite is ready', () => {
+    const ready = {
+      quoteStatus: 'idle',
+      rpcNotReady: false,
+      walletAddress: '0x1234',
+      needsDestinationWallet: false,
+      balanceStatus: 'ready',
+      balanceValue: '10',
+      amountError: '',
+      recipientError: '',
+      balanceTooLow: false,
+      transferOpen: false,
+    }
+
+    assert.equal(shouldAutoQuote(ready), true)
+    assert.equal(shouldAutoQuote({ ...ready, quoteStatus: 'loading' }), false)
+    assert.equal(shouldAutoQuote({ ...ready, quoteStatus: 'error' }), false)
+    assert.equal(shouldAutoQuote({ ...ready, walletAddress: '' }), false)
+    assert.equal(shouldAutoQuote({ ...ready, needsDestinationWallet: true }), false)
+    assert.equal(shouldAutoQuote({ ...ready, amountError: 'invalid' }), false)
+    assert.equal(shouldAutoQuote({ ...ready, transferOpen: true }), false)
   })
 
   it('resolves a single amount field error for aria-describedby', () => {
@@ -388,6 +413,46 @@ describe('mainnet transfer safety invariants', () => {
       }),
       /account changed/,
     )
+  })
+
+  it('reuses the connected EVM wallet when switching chains', async () => {
+    const calls = []
+    let chainId = '0x1'
+    const provider = {
+      async request(request) {
+        calls.push(request)
+        if (request.method === 'eth_chainId') return chainId
+        if (request.method === 'wallet_switchEthereumChain') {
+          chainId = request.params[0].chainId
+          return null
+        }
+        if (request.method === 'eth_accounts') {
+          return ['0x1234567890123456789012345678901234567890']
+        }
+        throw new Error(`unexpected method: ${request.method}`)
+      },
+    }
+    const adapter = { id: 'same-adapter' }
+    const wallet = {
+      address: '0x1234567890123456789012345678901234567890',
+      family: 'evm',
+      provider,
+      adapter,
+      chainId: 1,
+    }
+
+    const switched = await switchConnectedEvmWallet('mainnet', 'base', wallet)
+
+    assert.equal(switched.provider, provider)
+    assert.equal(switched.adapter, adapter)
+    assert.equal(switched.address, wallet.address)
+    assert.equal(switched.chainId, 8453)
+    assert.deepEqual(calls.map((call) => call.method), [
+      'eth_chainId',
+      'wallet_switchEthereumChain',
+      'eth_accounts',
+    ])
+    assert.equal(calls.some((call) => call.method === 'eth_requestAccounts'), false)
   })
 
   it('requires a buffered source gas balance and complete gas estimates', async () => {

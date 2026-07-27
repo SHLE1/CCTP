@@ -56,9 +56,11 @@ import {
   retryTransfer,
   safeExplorerUrl,
   sanitizeAmountInput,
+  shouldAutoQuote,
   subtractUsdcAmounts,
   subscribeEvmProviders,
   supportsFastTransfer,
+  switchConnectedEvmWallet,
   usesPublicSolanaRpc,
   validateAmount,
   validateRecipient,
@@ -135,6 +137,7 @@ const makeChains = () => Object.entries(CHAIN_NAMES).map(([id, name]) => ({
 
 const shortAddress = (value) => value ? `${value.slice(0, 5)}…${value.slice(-4)}` : ''
 const findChain = (chains, id) => chains.find((chain) => chain.id === id)
+const AUTO_QUOTE_DEBOUNCE_MS = 450
 
 function ChainMark({ chain, small = false }) {
   const [broken, setBroken] = useState(false)
@@ -882,7 +885,6 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
         ) {
           return
         }
-        setWallet(null)
         setQuote({ status: 'idle', data: null, error: '', key: '', quotedAt: 0 })
       },
     })
@@ -903,7 +905,6 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
         }
       },
       onChainChanged: () => {
-        setDestinationWallet(null)
         setQuote({ status: 'idle', data: null, error: '', key: '', quotedAt: 0 })
       },
     })
@@ -927,23 +928,62 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
     }
   }, [destinationWallet, solanaWalletState.connected, solanaWalletState.publicKey])
 
-  function swap() {
+  async function swap() {
+    if (source.family === 'evm' && destination.family === 'evm' && wallet?.family === 'evm') {
+      try {
+        const switchedWallet = await switchConnectedEvmWallet(environment, destinationId, wallet)
+        setWallet(switchedWallet)
+      } catch (error) {
+        setQuote({ status: 'idle', data: null, error: friendlyError(error), key: '', quotedAt: 0 })
+        return
+      }
+    } else {
+      setWallet(null)
+      setDestinationWallet(null)
+    }
     setSourceId(destinationId)
     setDestinationId(sourceId)
-    setWallet(null)
-    setDestinationWallet(null)
     setRecipient('')
   }
 
-  function setSource(value) {
+  async function setSource(value) {
+    if (value === sourceId) return
+    const nextSource = findChain(chains, value)
+    if (source.family === 'evm' && nextSource?.family === 'evm' && wallet?.family === 'evm') {
+      try {
+        const switchedWallet = await switchConnectedEvmWallet(environment, value, wallet)
+        setWallet(switchedWallet)
+      } catch (error) {
+        setQuote({ status: 'idle', data: null, error: friendlyError(error), key: '', quotedAt: 0 })
+        return
+      }
+    } else {
+      setWallet(null)
+    }
+    if (source.family !== nextSource?.family) setDestinationWallet(null)
     setSourceId(value)
-    setWallet(null)
-    setDestinationWallet(null)
   }
 
-  function setDestination(value) {
+  async function setDestination(value) {
+    if (value === destinationId) return
+    const nextDestination = findChain(chains, value)
+    if (
+      source.family !== destination.family
+      && destination.family === 'evm'
+      && nextDestination?.family === 'evm'
+      && destinationWallet?.family === 'evm'
+    ) {
+      try {
+        const switchedWallet = await switchConnectedEvmWallet(environment, value, destinationWallet)
+        setDestinationWallet(switchedWallet)
+      } catch (error) {
+        setQuote({ status: 'idle', data: null, error: friendlyError(error), key: '', quotedAt: 0 })
+        return
+      }
+    } else if (destination.family !== nextDestination?.family) {
+      setDestinationWallet(null)
+    }
     setDestinationId(value)
-    setDestinationWallet(null)
   }
 
   const recipientError = validateRecipient(environment, destinationId, recipient)
@@ -955,6 +995,25 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
       balanceTooLow = false
     }
   }
+
+  const autoQuoteReady = shouldAutoQuote({
+    quoteStatus: quote.status,
+    rpcNotReady,
+    walletAddress: wallet?.address,
+    needsDestinationWallet,
+    balanceStatus: balance.status,
+    balanceValue: balance.value,
+    amountError,
+    recipientError,
+    balanceTooLow,
+    transferOpen: transfer.open,
+  })
+
+  useEffect(() => {
+    if (!autoQuoteReady) return undefined
+    const timer = window.setTimeout(() => fetchQuote(), AUTO_QUOTE_DEBOUNCE_MS)
+    return () => window.clearTimeout(timer)
+  }, [autoQuoteReady, currentQuoteKey])
 
   const bridgeInput = (maxFee) => ({
     environment,
@@ -976,6 +1035,10 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
     const input = bridgeInput()
     setQuote((current) => beginQuoteRefresh(current, requestKey))
     try {
+      if (wallet?.family === 'evm') {
+        const switchedWallet = await switchConnectedEvmWallet(environment, sourceId, wallet)
+        setWallet(switchedWallet)
+      }
       await checkDestinationReadiness(environment, destinationId, recipient, useForwarder)
         .then((status) => {
           if (!status.ready) throw new Error(status.error)
@@ -1225,7 +1288,6 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
       activeTransferRef.current = null
       transferInFlightRef.current = false
       if (!useForwarder && source.family === destination.family && wallet?.family === 'evm') {
-        setWallet(null)
         setQuote({ status: 'idle', data: null, error: '', key: '', quotedAt: 0 })
       }
     }
@@ -1392,6 +1454,7 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
       || balance.value == null
       || balanceTooLow
       || feeTooHigh
+      || autoQuoteReady
       || quote.status === 'loading'
     )),
   )
@@ -1639,7 +1702,7 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
         onClick={primaryAction}
         disabled={formBlocked}
       >
-        {quote.status === 'loading' && <LoaderCircle className="spin" size={16} />}
+        {(autoQuoteReady || quote.status === 'loading') && <LoaderCircle className="spin" size={16} />}
         {rpcNotReady
           ? 'Configure Solana RPC'
           : !wallet
@@ -1664,7 +1727,9 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
                             ? 'Quoting…'
                             : quoteIsCurrent
                               ? 'Review transfer'
-                              : 'Get quote'}
+                              : autoQuoteReady
+                                ? 'Preparing quote…'
+                                : 'Get quote'}
       </button>
 
       {walletModal && (

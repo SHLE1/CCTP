@@ -58,6 +58,7 @@ export {
   safeExplorerUrl,
   sanitizeAmountInput,
   serializeBridgeResult,
+  shouldAutoQuote,
   subtractUsdcAmounts,
   validateAmount,
 } from './cctp-utils.js'
@@ -201,6 +202,35 @@ async function switchEvmChain(definition, provider = window.ethereum) {
   }
 }
 
+export async function switchConnectedEvmWallet(environment, chainId, wallet) {
+  const definition = getDefinition(environment, chainId)
+  if (definition.type !== 'evm' || wallet?.family !== 'evm' || !wallet?.address) {
+    throw new Error('The connected wallet cannot be reused for the selected EVM chain.')
+  }
+  const provider = wallet.provider
+  if (typeof provider?.request !== 'function') {
+    throw new Error('The EVM wallet provider is no longer available.')
+  }
+
+  const currentChainId = await provider.request({ method: 'eth_chainId' })
+  let numericChainId
+  try {
+    numericChainId = Number(BigInt(currentChainId))
+  } catch {
+    throw new Error('The EVM wallet returned an invalid network identifier.')
+  }
+  if (numericChainId !== Number(definition.chainId)) {
+    await switchEvmChain(definition, provider)
+  }
+
+  const accounts = await provider.request({ method: 'eth_accounts' })
+  const currentAddress = accounts?.[0]
+  if (!currentAddress || currentAddress.toLowerCase() !== wallet.address.toLowerCase()) {
+    throw new Error('The active EVM account changed. Reconnect the wallet before continuing.')
+  }
+  return { ...wallet, chainId: definition.chainId }
+}
+
 export async function connectSourceWallet(environment, chainId, walletProvider) {
   const definition = getDefinition(environment, chainId)
   if (definition.type === 'evm') {
@@ -297,7 +327,6 @@ export function subscribeEvmProviders(onProvider) {
 
 /**
  * Listen for EVM wallet account/chain changes. Returns an unsubscribe function.
- * On any meaningful change the app should disconnect rather than silently continue.
  */
 export function attachEvmWalletListeners(provider, { onAccountsChanged, onChainChanged } = {}) {
   if (!provider) return () => {}

@@ -116,6 +116,30 @@ export function canStartTransferFromQuote(quoteStatus, quoteIsCurrent) {
   return quoteStatus === 'ready' && quoteIsCurrent === true
 }
 
+export function shouldAutoQuote({
+  quoteStatus = 'idle',
+  rpcNotReady = false,
+  walletAddress = '',
+  needsDestinationWallet = false,
+  balanceStatus = 'idle',
+  balanceValue = null,
+  amountError = '',
+  recipientError = '',
+  balanceTooLow = false,
+  transferOpen = false,
+} = {}) {
+  return quoteStatus === 'idle'
+    && !rpcNotReady
+    && Boolean(walletAddress)
+    && !needsDestinationWallet
+    && balanceStatus === 'ready'
+    && balanceValue != null
+    && !amountError
+    && !recipientError
+    && !balanceTooLow
+    && !transferOpen
+}
+
 /** Single amount-field message for aria-describedby (priority order). */
 export function resolveAmountFieldError({
   amount = '',
