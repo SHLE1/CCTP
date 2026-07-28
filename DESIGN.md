@@ -124,7 +124,7 @@ Depth is light and structural: one soft card shadow, tonal fields inside the car
 - Dual theme: cool paper + violet (light) / near-black + amber (dark)
 - Rounded blue C + navy 1 brand mark on a deliberate white field
 - High-radius surfaces (`--radius-4xl` / 2rem) for the bridge card and sheets
-- Centered operate layout: primary task is the bridge card; history and FAQ follow
+- Centered operate layout: primary task is the bridge card; transfer history follows
 - Token-driven CSS variables in `src/styles.css` (`--bg`, `--surface`, `--btn`, semantic danger/warn/green)
 - System UI font stack; mono for addresses and amounts context
 
@@ -164,7 +164,7 @@ Dual-theme palette driven by CSS custom properties on `:root`, `[data-theme='lig
 - **Display** (700, 1.75rem, lh 1.15, tracking -0.03em): Bridge card `h1`
 - **Headline** (700, ~1.35rem): History section titles
 - **Title** (700, 17px): Sheet/modal headings
-- **Body** (400, ~0.9rem, lh 1.45): Subtitles, FAQ answers, helper copy
+- **Body** (400, ~0.9rem, lh 1.45): Subtitles and helper copy
 - **Label** (600, 13px): Field labels, pill text scale
 - **Amount** (500, ~1.85rem, tracking -0.03em): Amount input
 - **Mono** (13px+): Recipient fields, connected address, `code` in banners
@@ -180,7 +180,7 @@ Dual-theme palette driven by CSS custom properties on `:root`, `[data-theme='lig
 - Main padding: 38px 16px 64px; gaps 16px
 - Breakpoints observed: `900px`, `560px` (stack/tighten); min body width 320px
 
-**The Single Card Rule.** The transfer task lives in one elevated card; supporting tools (history, LUT, FAQ) sit below without competing for the same visual weight.
+**The Single Card Rule.** The transfer task lives in one elevated card; supporting tools (history and LUT) sit below without competing for the same visual weight.
 
 ## Elevation & Depth
 

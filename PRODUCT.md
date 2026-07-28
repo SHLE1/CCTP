@@ -48,7 +48,7 @@ It exists so users can:
 - Fast and Standard transfer modes (Bridge Kit `fastConfirmations`)
 - Quote TTL (60s), USDC balance preflight, 6-decimal amount validation, destination gas/ATA preflights
 - Step-by-step BridgeResult persistence and resume; explorer links; beforeunload while transfer in flight
-- Transfer history UI; FAQ; light/dark theme
+- Transfer history UI; light/dark theme
 - Solana Lookup Table authority scanning, cooldown tracking, deactivate/close, rent recovery
 
 ### Constraints

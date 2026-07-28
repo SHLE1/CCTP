@@ -103,33 +103,6 @@ const CHAIN_META = {
 
 const USDC_ICON = '/icons/usdc.png'
 
-const FAQ_ITEMS = [
-  {
-    q: 'What is CCTP?',
-    a: 'Circle Cross-Chain Transfer Protocol (CCTP) lets you move native USDC between supported blockchains by burning on the source chain and minting on the destination. No wrapped tokens or liquidity pools.',
-  },
-  {
-    q: 'How does CCTP work?',
-    a: 'USDC is burned on the source chain, Circle attests the burn, then native USDC is minted on the destination. Self-claim lets your destination wallet submit the mint; Orbit can submit it automatically for a quoted USDC fee.',
-  },
-  {
-    q: 'What is the difference between Fast Transfer and Standard Transfer?',
-    a: 'Fast Transfer uses Circle’s fast finality path for shorter wait times and may include a CCTP fee. Standard Transfer follows the normal attestation path with no CCTP fee, but can take longer.',
-  },
-  {
-    q: 'Which blockchains are supported?',
-    a: 'This app supports all 23 USDC mainnets currently available in Circle Bridge Kit: 22 EVM networks plus Solana.',
-  },
-  {
-    q: 'Are there any fees?',
-    a: 'This interface does not charge an extra fee. Self-claim has no Orbit fee but requires destination-chain gas. Fast Transfer may include a CCTP fee. Orbit automatic minting adds a quoted Forwarding Service fee.',
-  },
-  {
-    q: 'Is CCTP secure?',
-    a: 'CCTP is designed by Circle with a burn-and-mint model so funds are not parked in third-party bridge pools. Always verify network, amount, and recipient before signing.',
-  },
-]
-
 const ENVIRONMENT = 'mainnet'
 const ENVIRONMENT_LABEL = 'Mainnet'
 
@@ -2235,15 +2208,6 @@ function App({ environment }) {
           }}
         />
 
-        <section className="faq" aria-label="Frequently asked questions">
-          <h2>FAQ</h2>
-          {FAQ_ITEMS.map((item) => (
-            <details className="faq-item" key={item.q}>
-              <summary>{item.q}</summary>
-              <p>{item.a}</p>
-            </details>
-          ))}
-        </section>
       </main>
 
       <footer className="site-footer">

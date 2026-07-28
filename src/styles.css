@@ -55,7 +55,6 @@
   --mainnet-border: #f0c28a;
   --mainnet-bg: #fff8ee;
   --credit: var(--color-text-dark);
-  --faq-bg: transparent;
   --footer-muted: #8a7f7e;
   --theme-btn-bg: #ffffff;
   --theme-btn-border: var(--color-border);
@@ -95,7 +94,6 @@
   --mainnet-border: #5a4a20;
   --mainnet-bg: #2a2210;
   --credit: var(--color-light);
-  --faq-bg: transparent;
   --footer-muted: #7a7070;
   --theme-btn-bg: var(--color-darker);
   --theme-btn-border: rgba(255, 255, 255, 0.1);
@@ -1887,50 +1885,6 @@ summary:focus-visible,
 .lookup-submit.danger {
   background: var(--danger);
   color: var(--danger-bg);
-}
-
-/* FAQ */
-.faq {
-  width: min(540px, 100%);
-  margin-top: 28px;
-}
-.faq h2 {
-  margin: 0 0 14px;
-  font-size: 1.35rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: var(--text);
-}
-.faq-item {
-  border-bottom: 1px solid var(--border);
-}
-.faq-item summary {
-  list-style: none;
-  cursor: pointer;
-  padding: 16px 4px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-}
-.faq-item summary::-webkit-details-marker { display: none; }
-.faq-item summary::after {
-  content: '+';
-  font-size: 18px;
-  font-weight: 400;
-  color: var(--muted);
-  line-height: 1;
-}
-.faq-item[open] summary::after { content: '−'; }
-.faq-item p {
-  margin: 0 0 16px;
-  padding: 0 4px;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--text-body);
 }
 
 /* Footer */
