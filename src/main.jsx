@@ -2172,16 +2172,19 @@ function App({ environment }) {
   return (
     <div className="app">
       <header className="topbar">
-        <a className="brand" href="#">
+        <a className="brand" href="#" aria-label="CCTP One home">
           <img
             className="brand-mark"
-            src={USDC_ICON}
+            src="/cctp-one-logo.png"
             alt=""
-            width={22}
-            height={22}
+            width="32"
+            height="32"
             draggable={false}
           />
-          Relay
+          <span className="brand-wordmark">
+            <span>CCTP One</span>
+            <small>Native USDC</small>
+          </span>
         </a>
         <div className="topbar-right">
           <button
@@ -2256,7 +2259,7 @@ function App({ environment }) {
           </a>
         </div>
         <p className="footer-note">
-          Relay · {chains.length} chains · Independent UI, not affiliated with Circle.
+          CCTP One · {chains.length} chains · Independent UI, not affiliated with Circle.
         </p>
       </footer>
 
@@ -2285,7 +2288,7 @@ function App({ environment }) {
   )
 }
 
-function RelayRoot() {
+function CctpOneRoot() {
   const solanaEndpoint = useMemo(() => getSolanaRpcEndpoint(ENVIRONMENT), [])
 
   return (
@@ -2299,4 +2302,4 @@ function RelayRoot() {
   )
 }
 
-createRoot(document.getElementById('root')).render(<RelayRoot />)
+createRoot(document.getElementById('root')).render(<CctpOneRoot />)

@@ -1,5 +1,5 @@
 ---
-name: Relay
+name: CCTP One
 description: Mainnet CCTP USDC bridge — cool paper surfaces, violet ink, amber dark accent
 colors:
   primary: "#29233b"
@@ -110,18 +110,19 @@ components:
     height: "28px"
 ---
 
-# Design System: Relay
+# Design System: CCTP One
 
 ## Overview
 
 **Creative North Star: "The Mainnet Console"**
 
-Relay’s UI is a task-first bridge console: a single high-radius card centered on cool paper, with system sans type, monospaced addresses, and chain marks. Light mode is lavender-tinted paper and violet ink with a quiet relay-path background asset; dark mode is near-black with a warm amber accent for primary actions and borders. Expression lives in status clarity, honest mainnet warnings, and progressive disclosure—not in marketing illustration.
+CCTP One’s UI is a task-first bridge console: a single high-radius card centered on cool paper, with system sans type, monospaced addresses, and chain marks. Light mode is lavender-tinted paper and violet ink with a quiet transfer-path background asset; dark mode is near-black with a warm amber accent for primary actions and borders. Expression lives in status clarity, honest mainnet warnings, and progressive disclosure—not in marketing illustration.
 
 Depth is light and structural: one soft card shadow, tonal fields inside the card, and modal sheets. Motion is short (scale on press, spin on load, toggle knob travel) and respects `prefers-reduced-motion`.
 
 **Key Characteristics:**
 - Dual theme: cool paper + violet (light) / near-black + amber (dark)
+- Rounded blue C + navy 1 brand mark on a deliberate white field
 - High-radius surfaces (`--radius-4xl` / 2rem) for the bridge card and sheets
 - Centered operate layout: primary task is the bridge card; history and FAQ follow
 - Token-driven CSS variables in `src/styles.css` (`--bg`, `--surface`, `--btn`, semantic danger/warn/green)
@@ -214,7 +215,7 @@ Hybrid: flat page background + one ambient card/sheet shadow + tonal field nesti
 
 ### Inputs / Fields
 - Chain triggers and recipient: 56px height, field bg, 2xl radius
-- Amount panel: min-height 94px with fixed USDC identity; Relay does not expose an asset selector
+- Amount panel: min-height 94px with fixed USDC identity; CCTP One does not expose an asset selector
 - Completion method: collapsed summary by default, with Self-claim and Orbit controls disclosed on demand
 - Focus: stronger border (`--border-strong` or pill-fg on filters); limited `:focus-visible` usage today
 
@@ -223,7 +224,7 @@ Hybrid: flat page background + one ambient card/sheet shadow + tonal field nesti
 - History quick filters: segmented control on surface
 
 ### Navigation
-- Minimal topbar: brand + optional tool links + theme toggle
+- Minimal topbar: 32px white-field C1 mark + CCTP One wordmark + optional tool links + theme toggle
 - No multi-route app shell; primary IA is scroll sections
 
 ### Signature: Transfer progress sheet

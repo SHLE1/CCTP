@@ -1,4 +1,4 @@
-/* Relay design tokens */
+/* CCTP One design tokens */
 :root {
   --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
@@ -182,20 +182,37 @@ a { color: inherit; text-decoration: none; }
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 15px;
+  gap: 10px;
   font-weight: 700;
   letter-spacing: -0.03em;
   color: var(--text);
 }
 .brand-mark {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  object-fit: cover;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-lg);
   display: block;
   flex-shrink: 0;
-  background: #2775ca;
+  object-fit: cover;
+  background: #ffffff;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--border) 82%, transparent);
+}
+.brand-wordmark {
+  display: grid;
+  gap: 1px;
+  line-height: 1;
+}
+.brand-wordmark > span {
+  font-size: 15px;
+  font-weight: 750;
+  letter-spacing: -0.035em;
+}
+.brand-wordmark small {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 .topbar-right {
   display: flex;

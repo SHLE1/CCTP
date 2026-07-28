@@ -19,7 +19,7 @@ Typical situations:
 
 ## Product Purpose
 
-**Relay** is an independent browser interface for **native USDC** transfers via **Circle CCTP V2** on **mainnet only**.
+**CCTP One** is an independent browser interface for **native USDC** transfers via **Circle CCTP V2** on **mainnet only**.
 
 It exists so users can:
 1. Choose source/destination chains, amount, recipient, transfer speed (Fast vs Standard), and mint completion mode (Self-claim vs Orbit)
@@ -67,7 +67,9 @@ It exists so users can:
 
 ## Brand Commitments
 
-- Product name in UI/README: **Relay** (package name `relay-cctp`)
+- Product name in UI/README: **CCTP One** (package name `cctp-one`)
+- Approved brand mark: rounded blue **C** fused with a cold-navy **1** on white (`public/cctp-one-logo.png`)
+- Brand usage must make its independent status explicit and must not imply that CCTP One is an official Circle product
 - Positioning copy: independent CCTP USDC bridge interface; USDC/chain icons from Trust Wallet / DefiLlama / Circle asset paths as documented in code comments
 - **[Inferred]** Visual identity exists in `src/styles.css` (lavender-cool light + near-black dark with amber accent) but was not user-interviewed as a binding brand system; treat code as incumbent until redesign is requested
 

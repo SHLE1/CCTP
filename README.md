@@ -1,4 +1,4 @@
-# Relay — CCTP USDC bridge
+# CCTP One — native USDC across chains
 
 An independent interface for moving native USDC between Solana and EVM chains with Circle CCTP V2. Users can self-claim with a destination wallet to avoid the Orbit fee, or choose Circle Orbit for automatic destination minting. The app runs on CCTP mainnet only.
 
