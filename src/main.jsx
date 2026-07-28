@@ -17,8 +17,10 @@ import {
   LoaderCircle,
   Moon,
   Sun,
+  UserRound,
   Wallet,
   X,
+  Zap,
 } from 'lucide-react'
 import {
   QUOTE_TTL_MS,
@@ -1524,13 +1526,8 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
           </span>
           <div>
             <h1>Transfer USDC</h1>
-            <p className="card-sub">Native USDC across chains via Circle CCTP. Mainnet only.</p>
+            <p className="card-sub">Native USDC across chains via Circle CCTP · Mainnet</p>
           </div>
-        </div>
-        <div className="card-actions">
-          <button type="button" className="ghost-btn" onClick={resumeLastTransfer}>
-            Resume transfer
-          </button>
         </div>
       </div>
 
@@ -1568,53 +1565,6 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
         <ChainSelect chains={chains} label="Destination Chain" value={destinationId} otherValue={sourceId} onChange={setDestination} />
       </div>
 
-      <div className="settlement-panel" role="radiogroup" aria-label="Mint completion mode">
-        <button
-          type="button"
-          role="radio"
-          aria-checked={settlementMode === 'manual'}
-          className={settlementMode === 'manual' ? 'active' : ''}
-          onClick={() => setSettlementMode('manual')}
-        >
-          <span>
-            <strong>Self-claim</strong>
-            <small>0 Orbit fee · destination wallet pays gas</small>
-          </span>
-          <Check size={16} />
-        </button>
-        <button
-          type="button"
-          role="radio"
-          aria-checked={settlementMode === 'orbit'}
-          className={settlementMode === 'orbit' ? 'active' : ''}
-          onClick={() => {
-            if (forwarderAvailable) setSettlementMode('orbit')
-          }}
-          disabled={!forwarderAvailable}
-        >
-          <span>
-            <strong>Orbit automatic</strong>
-            <small>
-              {forwarderAvailable
-                ? 'One source wallet · quoted USDC fee'
-                : `Unavailable to ${destination.name}`}
-            </small>
-          </span>
-          <Check size={16} />
-        </button>
-      </div>
-
-      {settlementMode === 'manual' && (
-        <div className="mode-callout" role="note">
-          <Info size={14} />
-          <span>
-            {source.family === destination.family
-              ? `Self-claim: your connected ${destination.name} wallet signs the destination mint. Fund it with native gas before transfer.`
-              : `Self-claim: you will also connect a ${destination.name} claim wallet to sign mint. Prefer Orbit if you only want one wallet and accept the quoted USDC fee.`}
-          </span>
-        </div>
-      )}
-
       <div className="amount-panel">
         <span className="field-label" id="amount-label">Amount</span>
         <div className="amount-row">
@@ -1635,15 +1585,14 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
             />
             <span className="balance-hint">
               Balance: {balanceLabel}
-              {wallet && balance.status === 'ready' && balance.value != null && (
-                <button
-                  type="button"
-                  className="max-amount"
-                  onClick={() => setAmount(sanitizeAmountInput(balance.value))}
-                >
-                  Max
-                </button>
-              )}
+              <button
+                type="button"
+                className="max-amount"
+                disabled={!wallet || balance.status !== 'ready' || balance.value == null}
+                onClick={() => setAmount(sanitizeAmountInput(balance.value))}
+              >
+                Max
+              </button>
             </span>
           </div>
         </div>
@@ -1680,28 +1629,74 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
         )}
       </div>
 
-      <div className="meta-row">
-        <div className="info-pills">
-          <span className="info-pill">Fee: {feeLabel}</span>
-          {quote.data && feeBreakdown.forwarder !== '0' && (
-            <span className="info-pill soft">Orbit: {feeBreakdown.forwarder}</span>
-          )}
-          {quote.data && feeBreakdown.protocol !== '0' && (
-            <span className="info-pill soft">CCTP: {feeBreakdown.protocol}</span>
-          )}
-          {destinationGasEstimate && (
-            <span className="info-pill soft">
-              Claim gas: {destinationGasEstimate.fees.fee} {destinationGasEstimate.token}
+      <details className="completion-method">
+        <summary>
+          <span className="completion-method-icon" aria-hidden="true">
+            {settlementMode === 'manual' ? <UserRound size={18} /> : <ArrowRight size={18} />}
+          </span>
+          <span className="completion-method-copy">
+            <small>Completion method</small>
+            <strong>{settlementMode === 'manual' ? 'Self-claim' : 'Orbit automatic'}</strong>
+            <span>
+              {settlementMode === 'manual'
+                ? 'You control minting · No Orbit fee'
+                : 'One source wallet · Quoted USDC fee'}
             </span>
-          )}
-          <span className="info-pill">ETA: {eta}</span>
-          <span className="info-pill">CCTP v2</span>
-          {receive != null && (
-            <span className="info-pill soft">Receive: {receive}</span>
-          )}
+          </span>
+          <span className="completion-method-change">
+            Change <ChevronRight size={16} />
+          </span>
+        </summary>
+
+        <div className="settlement-panel" role="radiogroup" aria-label="Mint completion mode">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={settlementMode === 'manual'}
+            className={settlementMode === 'manual' ? 'active' : ''}
+            onClick={() => setSettlementMode('manual')}
+          >
+            <span>
+              <strong>Self-claim</strong>
+              <small>0 Orbit fee · destination wallet pays gas</small>
+            </span>
+            <Check size={16} />
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={settlementMode === 'orbit'}
+            className={settlementMode === 'orbit' ? 'active' : ''}
+            onClick={() => {
+              if (forwarderAvailable) setSettlementMode('orbit')
+            }}
+            disabled={!forwarderAvailable}
+          >
+            <span>
+              <strong>Orbit automatic</strong>
+              <small>
+                {forwarderAvailable
+                  ? 'One source wallet · quoted USDC fee'
+                  : `Unavailable to ${destination.name}`}
+              </small>
+            </span>
+            <Check size={16} />
+          </button>
         </div>
+      </details>
+
+      <div className="mode-callout completion-note" role="note">
+        <Info size={14} />
+        <span>
+          {settlementMode === 'manual'
+            ? `${destination.name} wallet signs the mint and pays destination gas.`
+            : 'Circle Forwarding Service completes minting for the quoted USDC fee.'}
+        </span>
+      </div>
+
+      <div className="meta-row">
         <label className={`fast-toggle ${!source.supportsFast ? 'disabled' : ''}`}>
-          <span>Fast Transfer</span>
+          <span><Zap size={16} aria-hidden="true" />Fast transfer</span>
           <button
             type="button"
             role="switch"
@@ -1715,7 +1710,27 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
             <i />
           </button>
         </label>
+        <div className="delivery-facts" aria-label="Transfer estimate">
+          <span><small>Est.</small> {eta}</span>
+          <span><small>Fee</small> {feeLabel}</span>
+          <span className="protocol-badge">CCTP v2</span>
+        </div>
       </div>
+
+      {(quote.data || destinationGasEstimate || receive != null) && (
+        <div className="quote-breakdown" aria-label="Quote details">
+          {quote.data && feeBreakdown.forwarder !== '0' && (
+            <span>Orbit fee {feeBreakdown.forwarder}</span>
+          )}
+          {quote.data && feeBreakdown.protocol !== '0' && (
+            <span>CCTP fee {feeBreakdown.protocol}</span>
+          )}
+          {destinationGasEstimate && (
+            <span>Claim gas {destinationGasEstimate.fees.fee} {destinationGasEstimate.token}</span>
+          )}
+          {receive != null && <span>Receive {receive} USDC</span>}
+        </div>
+      )}
 
       {quoteIsCurrent && quoteCountdownLabel && (
         <div className="quote-freshness" role="status">
@@ -1774,6 +1789,7 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
                                 ? 'Preparing quote…'
                                 : 'Get quote'}
       </button>
+      <p className="card-trust">No interface fee · Native USDC · Uses Circle CCTP v2</p>
 
       {walletModal && (
         <WalletModal
@@ -2206,7 +2222,6 @@ function App({ environment }) {
           chains={chains}
           resumeRequest={resumeRequest}
         />
-        <p className="footnote">No interface fee. Self-claim uses destination gas; Orbit and CCTP fees apply only when quoted.</p>
 
         <TransferHistory
           environment={environment}

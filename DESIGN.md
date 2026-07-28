@@ -96,7 +96,7 @@ components:
     backgroundColor: "{colors.surface-light}"
     textColor: "{colors.primary}"
     rounded: "{rounded.4xl}"
-    padding: "28px"
+    padding: "32px 32px 38px"
   field-input:
     backgroundColor: "{colors.field-light}"
     textColor: "{colors.primary}"
@@ -116,7 +116,7 @@ components:
 
 **Creative North Star: "The Mainnet Console"**
 
-Relay’s UI is a task-first bridge console: a single high-radius card centered on cool paper, with system sans type, monospaced addresses, and chain marks. Light mode is lavender-tinted paper and violet ink; dark mode is near-black with a warm amber accent for primary actions and borders. Expression lives in density, status clarity, and honest mainnet warnings—not in marketing illustration.
+Relay’s UI is a task-first bridge console: a single high-radius card centered on cool paper, with system sans type, monospaced addresses, and chain marks. Light mode is lavender-tinted paper and violet ink with a quiet relay-path background asset; dark mode is near-black with a warm amber accent for primary actions and borders. Expression lives in status clarity, honest mainnet warnings, and progressive disclosure—not in marketing illustration.
 
 Depth is light and structural: one soft card shadow, tonal fields inside the card, and modal sheets. Motion is short (scale on press, spin on load, toggle knob travel) and respects `prefers-reduced-motion`.
 
@@ -172,11 +172,11 @@ Dual-theme palette driven by CSS custom properties on `:root`, `[data-theme='lig
 
 ## Layout
 
-- App column: topbar (56px) → main (flex center) → footer
-- Primary surface: `.bridge-card` at `min(540px, 100%)` with 28px padding
-- Chain row: 3-column grid `1fr 40px 1fr` (source | swap | destination)
-- Secondary width for history: `min(1100px, 100%)`
-- Main padding: 24px 16px 48px; gaps 16px
+- App column: topbar (64px) → main (flex start) → footer
+- Primary surface: `.bridge-card` at `min(720px, 100%)` with `32px 32px 38px` padding
+- Chain row: 3-column grid `1fr 44px 1fr` (source | swap | destination)
+- Secondary width for history: `min(900px, 100%)`
+- Main padding: 38px 16px 64px; gaps 16px
 - Breakpoints observed: `900px`, `560px` (stack/tighten); min body width 320px
 
 **The Single Card Rule.** The transfer task lives in one elevated card; supporting tools (history, LUT, FAQ) sit below without competing for the same visual weight.
@@ -213,8 +213,9 @@ Hybrid: flat page background + one ambient card/sheet shadow + tonal field nesti
 - **Sheets:** max ~400px (progress sheet may differ), same surface language
 
 ### Inputs / Fields
-- Chain triggers and recipient: 52px height, field bg, 2xl radius
-- Amount panel: min-height 76px nested field with asset pill
+- Chain triggers and recipient: 56px height, field bg, 2xl radius
+- Amount panel: min-height 94px with fixed USDC identity; Relay does not expose an asset selector
+- Completion method: collapsed summary by default, with Self-claim and Orbit controls disclosed on demand
 - Focus: stronger border (`--border-strong` or pill-fg on filters); limited `:focus-visible` usage today
 
 ### Pills / Chips
