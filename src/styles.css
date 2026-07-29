@@ -4,8 +4,8 @@
   --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   --radius-lg: 0.5rem;
   --radius-xl: 0.75rem;
-  --radius-2xl: 1rem;
-  --radius-4xl: 2rem;
+  --radius-2xl: 0.625rem;
+  --radius-4xl: 0.75rem;
   --color-border: #dbdeec;
   --color-primary-light: #2775ca;
   --color-primary: #29233b;
@@ -50,7 +50,7 @@
   --warn-border: #fde68a;
   --green: #059669;
   --modal-backdrop: rgba(25, 16, 15, 0.35);
-  --shadow: 0 24px 64px rgba(41, 35, 59, 0.14);
+  --shadow: 0 1px 2px rgba(41, 35, 59, 0.06), 0 12px 32px rgba(41, 35, 59, 0.05);
   --mainnet-fg: #b45309;
   --mainnet-border: #f0c28a;
   --mainnet-bg: #fff8ee;
@@ -89,7 +89,7 @@
   --warn-border: #4a3c14;
   --green: #34d399;
   --modal-backdrop: rgba(0, 0, 0, 0.65);
-  --shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 12px 32px rgba(0, 0, 0, 0.35);
   --mainnet-fg: #fbbf24;
   --mainnet-border: #5a4a20;
   --mainnet-bg: #2a2210;
@@ -137,7 +137,7 @@ html:not([data-theme]) {
   --warn-border: #fde68a;
   --green: #059669;
   --modal-backdrop: rgba(25, 16, 15, 0.35);
-  --shadow: 0 24px 64px rgba(41, 35, 59, 0.14);
+  --shadow: 0 1px 2px rgba(41, 35, 59, 0.06), 0 12px 32px rgba(41, 35, 59, 0.05);
   --mainnet-fg: #b45309;
   --mainnet-border: #f0c28a;
   --mainnet-bg: #fff8ee;
@@ -161,13 +161,6 @@ a { color: inherit; text-decoration: none; }
   background: var(--bg);
   color: var(--text);
 }
-[data-theme='light'] .app {
-  background-image: url('/relay-paths-bg.png');
-  background-repeat: no-repeat;
-  background-position: center 58px;
-  background-size: 1440px auto;
-}
-
 .topbar {
   position: relative;
   z-index: 20;
@@ -207,7 +200,7 @@ a { color: inherit; text-decoration: none; }
 }
 .brand-wordmark small {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -235,7 +228,7 @@ a { color: inherit; text-decoration: none; }
   min-height: 40px;
   padding: 0 11px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-2xl);
   background: var(--theme-btn-bg);
   color: var(--text);
   font-size: 12px;
@@ -343,7 +336,7 @@ main {
   min-height: 40px;
   height: auto;
   padding: 0 14px;
-  border-radius: 999px;
+  border-radius: var(--radius-2xl);
   border: 1px solid var(--btn-secondary-border);
   background: var(--btn-secondary-bg);
   color: var(--btn-secondary-text);
@@ -371,7 +364,7 @@ main {
 }
 .chain-trigger {
   width: 100%;
-  height: 54px;
+  height: 48px;
   border: 1px solid var(--border);
   border-radius: var(--radius-2xl);
   background: var(--field);
@@ -790,7 +783,7 @@ summary:focus-visible,
 .amount-meta .field-label { margin: 0; }
 .recipient-panel > input {
   width: 100%;
-  height: 52px;
+  height: 48px;
   border: 1px solid var(--border);
   border-radius: var(--radius-2xl);
   background: var(--field);
@@ -944,7 +937,7 @@ summary:focus-visible,
 
 .primary-button {
   width: 100%;
-  height: 52px;
+  height: 48px;
   border: 0;
   border-radius: var(--radius-2xl);
   background: var(--btn);
@@ -1073,7 +1066,7 @@ summary:focus-visible,
   border-radius: 99px;
   background: var(--field-soft);
   color: var(--faint);
-  font: 700 9px var(--font-mono);
+  font: 700 10px var(--font-mono);
 }
 .history-quick-filters button.active > span {
   background: var(--pill-bg);
@@ -1114,7 +1107,7 @@ summary:focus-visible,
   border-radius: 99px;
   background: var(--pill-bg);
   color: var(--pill-fg);
-  font: 700 9px var(--font-mono);
+  font: 700 10px var(--font-mono);
 }
 .history-filter-popover {
   position: absolute;
@@ -1566,8 +1559,8 @@ summary:focus-visible,
   padding: 0 14px;
   border: 1px solid var(--btn-secondary-border);
   border-radius: 12px;
-  background: var(--btn) !important;
-  color: var(--btn-text) !important;
+  background: var(--btn);
+  color: var(--btn-text);
   font: 700 12px var(--font-sans);
   white-space: nowrap;
   transition: transform 120ms cubic-bezier(0.16, 1, 0.3, 1), opacity 120ms ease;
@@ -1610,7 +1603,7 @@ summary:focus-visible,
 .lookup-row > [data-label]::before {
   content: attr(data-label);
   color: var(--faint);
-  font: 700 9px var(--font-sans);
+  font: 700 10px var(--font-sans);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -1659,7 +1652,7 @@ summary:focus-visible,
   border-radius: 99px;
   background: var(--field-soft);
   color: var(--muted);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 750;
 }
 .lookup-tag.cctp {
@@ -2054,7 +2047,7 @@ summary:focus-visible,
 }
 .sheet .wallet-adapter-button-trigger {
   width: 100%;
-  height: 52px;
+  height: 48px;
   border: 0;
   border-radius: var(--radius-2xl);
   background: var(--btn);
@@ -2070,20 +2063,22 @@ summary:focus-visible,
   font-size: 12px;
   margin: 12px 0 0;
 }
-.wallet-adapter-modal-wrapper {
-  background: var(--surface) !important;
-  color: var(--text) !important;
-  border-radius: var(--radius-4xl) !important;
+/* @solana/wallet-adapter-react-ui ships same-specificity rules that may load after
+   ours, so the anchor class is doubled to win on specificity without !important. */
+.wallet-adapter-modal-wrapper.wallet-adapter-modal-wrapper {
+  background: var(--surface);
+  color: var(--text);
+  border-radius: var(--radius-4xl);
   border: 1px solid var(--border);
 }
-.wallet-adapter-modal-title {
-  color: var(--text) !important;
-  font-family: var(--font-sans) !important;
+.wallet-adapter-modal-wrapper.wallet-adapter-modal-wrapper .wallet-adapter-modal-title {
+  color: var(--text);
+  font-family: var(--font-sans);
 }
-.wallet-adapter-modal-list .wallet-adapter-button { color: var(--text) !important; }
-.wallet-adapter-modal-list .wallet-adapter-button:hover { background: var(--field-soft) !important; }
-.wallet-adapter-modal-button-close { background: var(--field-soft) !important; }
-.wallet-adapter-modal-button-close svg { fill: var(--muted) !important; }
+.wallet-adapter-modal-wrapper.wallet-adapter-modal-wrapper .wallet-adapter-modal-list .wallet-adapter-button { color: var(--text); }
+.wallet-adapter-modal-wrapper.wallet-adapter-modal-wrapper .wallet-adapter-modal-list .wallet-adapter-button:hover { background: var(--field-soft); }
+.wallet-adapter-modal-wrapper.wallet-adapter-modal-wrapper .wallet-adapter-modal-button-close { background: var(--field-soft); }
+.wallet-adapter-modal-wrapper.wallet-adapter-modal-wrapper .wallet-adapter-modal-button-close svg { fill: var(--muted); }
 
 .error-message {
   display: flex;
@@ -2385,7 +2380,7 @@ summary:focus-visible,
   .history-row > [data-label]::before {
     content: attr(data-label);
     color: var(--faint);
-    font: 700 9px var(--font-sans);
+    font: 700 10px var(--font-sans);
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }
@@ -2406,9 +2401,8 @@ summary:focus-visible,
 }
 
 @media (max-width: 560px) {
-  [data-theme='light'] .app { background-image: none; }
   main { padding: 52px 12px 32px; }
-  .bridge-card { padding: 20px 16px; border-radius: 1.5rem; }
+  .bridge-card { padding: 20px 16px; }
   .card-topline { flex-direction: column; align-items: stretch; margin-bottom: 22px; }
   .card-actions { flex-direction: row; align-items: center; justify-content: space-between; }
   .card-title h1 { font-size: 1.1rem; }
@@ -2416,7 +2410,7 @@ summary:focus-visible,
   .bridge-icon {
     width: 48px;
     height: 48px;
-    border-radius: 14px;
+    border-radius: var(--radius-2xl);
   }
   .bridge-icon svg { width: 24px; height: 24px; }
   .chain-grid {
@@ -2432,7 +2426,7 @@ summary:focus-visible,
     transform: none;
     margin: 0 0 10px;
   }
-  .chain-trigger { height: 52px; padding: 0 9px; gap: 7px; }
+  .chain-trigger { height: 48px; padding: 0 9px; gap: 7px; }
   .chain-trigger .chain-mark { width: 22px; height: 22px; }
   .chain-trigger svg.chev { width: 14px; height: 14px; }
   .chain-field .field-label { font-size: 11px; white-space: nowrap; }
@@ -2474,7 +2468,7 @@ summary:focus-visible,
     min-height: 38px;
     padding: 0;
     justify-content: center;
-    border-radius: 999px;
+    border-radius: var(--radius-2xl);
   }
   .topbar-tool-label { display: none; }
   .lookup-drawer { width: 100%; border-left: 0; padding: 14px 12px 32px; }

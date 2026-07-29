@@ -70,8 +70,8 @@ typography:
 rounded:
   lg: "0.5rem"
   xl: "0.75rem"
-  2xl: "1rem"
-  4xl: "2rem"
+  2xl: "0.625rem"
+  4xl: "0.75rem"
   pill: "999px"
 spacing:
   xs: "6px"
@@ -86,12 +86,12 @@ components:
     textColor: "#ffffff"
     rounded: "{rounded.2xl}"
     padding: "0 16px"
-    height: "56px"
+    height: "48px"
   button-primary-dark:
     backgroundColor: "{colors.dark-primary}"
     textColor: "{colors.dark-bg}"
     rounded: "{rounded.2xl}"
-    height: "56px"
+    height: "48px"
   button-ghost:
     backgroundColor: "{colors.field-light}"
     textColor: "{colors.primary}"
@@ -107,7 +107,7 @@ components:
     backgroundColor: "{colors.field-light}"
     textColor: "{colors.primary}"
     rounded: "{rounded.2xl}"
-    height: "52px"
+    height: "48px"
   pill-info:
     backgroundColor: "{colors.pill-bg-light}"
     textColor: "{colors.pill-fg-light}"
@@ -122,14 +122,14 @@ components:
 
 **Creative North Star: "The Mainnet Console"**
 
-CCTP One’s UI is a task-first bridge console: a single high-radius card centered on cool paper, with system sans type, monospaced addresses, and chain marks. Light mode is lavender-tinted paper and violet ink with a quiet transfer-path background asset; dark mode is near-black with a warm amber accent for primary actions and borders. Expression lives in status clarity, honest mainnet warnings, and progressive disclosure—not in marketing illustration.
+CCTP One’s UI is a task-first bridge console: a single card centered on cool paper, with system sans type, monospaced addresses, and chain marks. Light mode is lavender-tinted paper and violet ink; dark mode is near-black with a warm amber accent for primary actions and borders. Expression lives in status clarity, honest mainnet warnings, and progressive disclosure—not in marketing illustration.
 
 Depth is light and structural: one soft card shadow, tonal fields inside the card, and modal sheets. Motion is short (scale on press, spin on load, toggle knob travel) and respects `prefers-reduced-motion`.
 
 **Key Characteristics:**
 - Dual theme: cool paper + violet (light) / near-black + amber (dark)
 - Rounded blue C + navy 1 brand mark on a deliberate white field
-- High-radius surfaces (`--radius-4xl` / 2rem) for the bridge card and sheets
+- Two-tier radii: 0.75rem (`--radius-4xl`) for the bridge card and sheets, 0.625rem (`--radius-2xl`) for controls; full-pill radius is reserved for true circles and status badges
 - Centered operate layout: primary task is the bridge card; transfer history follows
 - Token-driven CSS variables in `src/styles.css` (`--bg`, `--surface`, `--btn`, semantic danger/warn/green)
 - System UI font stack; mono for addresses and amounts context
@@ -193,16 +193,16 @@ Dual-theme palette driven by CSS custom properties on `:root`, `[data-theme='lig
 Hybrid: flat page background + one ambient card/sheet shadow + tonal field nesting.
 
 ### Shadow Vocabulary
-- **Light ambient** (`0 24px 64px rgba(41, 35, 59, 0.14)`): Bridge card and sheets
-- **Dark ambient** (`0 8px 24px rgba(0, 0, 0, 0.45)`): Same roles in dark theme
+- **Light ambient** (`0 1px 2px rgba(41, 35, 59, 0.06), 0 12px 32px rgba(41, 35, 59, 0.05)`): Bridge card and sheets
+- **Dark ambient** (`0 1px 2px rgba(0, 0, 0, 0.5), 0 12px 32px rgba(0, 0, 0, 0.35)`): Same roles in dark theme
 - **Modal backdrop**: light `rgba(25, 16, 15, 0.35)` / dark `rgba(0, 0, 0, 0.65)`
 
 **The Quiet Lift Rule.** No multi-layer glass stacks; elevation is reserved for the card and modal sheet.
 
 ## Shapes
 
-- Large soft geometry: card/sheet `2rem` (`--radius-4xl`)
-- Controls and fields: `1rem` (`--radius-2xl`)
+- Compact geometry: card/sheet `0.75rem` (`--radius-4xl`)
+- Controls and fields: `0.625rem` (`--radius-2xl`)
 - Pills/toggles/theme control: full pill (`999px`)
 - Chain/USDC marks: circular; wallet marks ~10px radius squares
 - Borders: 1px semantic `--border`, strong on hover/focus
@@ -210,17 +210,17 @@ Hybrid: flat page background + one ambient card/sheet shadow + tonal field nesti
 ## Components
 
 ### Buttons
-- **Primary:** full-width 52px, radius 2xl, `--btn` / `--btn-text`, weight 700; disabled keeps full opacity with a muted fill (`--btn` 12% on `--field`) + `--muted` text + 1px border
-- **Ghost / secondary:** 34px height, pill, secondary border/bg tokens
+- **Primary:** full-width 48px, radius 2xl, `--btn` / `--btn-text`, weight 700; disabled keeps full opacity with a muted fill (`--btn` 12% on `--field`) + `--muted` text + 1px border
+- **Ghost / secondary:** 34px height, radius 2xl, secondary border/bg tokens
 - **Icon button:** 34×34, radius 10px, field background
-- **Topbar tool:** min-height 34px, pill border
+- **Topbar tool:** min-height 40px, radius 2xl border
 
 ### Cards / Containers
 - **Bridge card:** surface + border + 4xl radius + shadow + 28px padding
 - **Sheets:** max ~400px (progress sheet may differ), same surface language
 
 ### Inputs / Fields
-- Chain triggers: 54px height; recipient: 52px; primary CTA: 52px. Field bg, 2xl radius
+- Chain triggers, recipient field, and primary CTA share one 48px control height. Field bg, 2xl radius
 - Amount panel: min-height 96px with fixed USDC identity; the amount input is the display hero (2.75rem/600); CCTP One does not expose an asset selector
 - Completion method: collapsed 66px summary by default, with Self-claim and Orbit controls disclosed on demand
 - Focus: stronger border (`--border-strong` or pill-fg on filters); limited `:focus-visible` usage today

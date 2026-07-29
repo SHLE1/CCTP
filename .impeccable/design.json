@@ -19,8 +19,8 @@
       "mono": { "displayName": "Mono", "purpose": "Addresses, codes, compact counts" }
     },
     "shadows": [
-      { "name": "ambient-light", "value": "0 16px 48px rgba(41, 35, 59, 0.08)", "purpose": "Bridge card and sheets in light theme" },
-      { "name": "ambient-dark", "value": "0 8px 24px rgba(0, 0, 0, 0.45)", "purpose": "Bridge card and sheets in dark theme" }
+      { "name": "ambient-light", "value": "0 1px 2px rgba(41, 35, 59, 0.06), 0 12px 32px rgba(41, 35, 59, 0.05)", "purpose": "Bridge card and sheets in light theme" },
+      { "name": "ambient-dark", "value": "0 1px 2px rgba(0, 0, 0, 0.5), 0 12px 32px rgba(0, 0, 0, 0.35)", "purpose": "Bridge card and sheets in dark theme" }
     ],
     "motion": [
       { "name": "press-scale", "value": "transform 120ms cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Topbar tool active press" },
@@ -40,7 +40,7 @@
       "refersTo": "button-primary",
       "description": "Full-width transfer CTA using theme --btn tokens.",
       "html": "<button class=\"ds-btn-primary\" type=\"button\">Continue</button>",
-      "css": ".ds-btn-primary { width: 100%; height: 56px; border: 0; border-radius: 1rem; background: #29233b; color: #fff; font: 700 16px ui-sans-serif, system-ui, sans-serif; letter-spacing: -0.01em; display: flex; align-items: center; justify-content: center; gap: 8px; } .ds-btn-primary:hover:not(:disabled) { opacity: 0.92; } .ds-btn-primary:disabled { opacity: 0.4; cursor: not-allowed; } .ds-btn-primary:focus-visible { outline: 2px solid #2775ca; outline-offset: 2px; }"
+      "css": ".ds-btn-primary { width: 100%; height: 48px; border: 0; border-radius: 0.625rem; background: #29233b; color: #fff; font: 700 16px ui-sans-serif, system-ui, sans-serif; letter-spacing: -0.01em; display: flex; align-items: center; justify-content: center; gap: 8px; } .ds-btn-primary:hover:not(:disabled) { opacity: 0.92; } .ds-btn-primary:disabled { opacity: 0.4; cursor: not-allowed; } .ds-btn-primary:focus-visible { outline: 2px solid #2775ca; outline-offset: 2px; }"
     },
     {
       "name": "Ghost Button",
@@ -48,7 +48,7 @@
       "refersTo": "button-ghost",
       "description": "Secondary pill action (Resume, tools).",
       "html": "<button class=\"ds-btn-ghost\" type=\"button\">Resume transfer</button>",
-      "css": ".ds-btn-ghost { height: 34px; padding: 0 14px; border-radius: 999px; border: 1px solid #dbdeec; background: #fff; color: #29233b; font: 600 12px ui-sans-serif, system-ui, sans-serif; } .ds-btn-ghost:hover { opacity: 0.88; } .ds-btn-ghost:focus-visible { outline: 2px solid #2a4f8a; outline-offset: 2px; }"
+      "css": ".ds-btn-ghost { height: 34px; padding: 0 14px; border-radius: 0.625rem; border: 1px solid #dbdeec; background: #fff; color: #29233b; font: 600 12px ui-sans-serif, system-ui, sans-serif; } .ds-btn-ghost:hover { opacity: 0.88; } .ds-btn-ghost:focus-visible { outline: 2px solid #2a4f8a; outline-offset: 2px; }"
     },
     {
       "name": "Bridge Card",
@@ -56,7 +56,7 @@
       "refersTo": "card-bridge",
       "description": "Primary transfer surface.",
       "html": "<section class=\"ds-bridge-card\"><h1>Transfer USDC</h1><p>Native CCTP mainnet</p></section>",
-      "css": ".ds-bridge-card { width: min(540px, 100%); background: #eeeff7; border: 1px solid #dbdeec; border-radius: 2rem; padding: 28px; box-shadow: 0 16px 48px rgba(41, 35, 59, 0.08); color: #29233b; font-family: ui-sans-serif, system-ui, sans-serif; } .ds-bridge-card h1 { margin: 0; font-size: 1.75rem; font-weight: 700; letter-spacing: -0.03em; line-height: 1.15; } .ds-bridge-card p { margin: 6px 0 0; font-size: 0.9rem; color: #664e4d; }"
+      "css": ".ds-bridge-card { width: min(540px, 100%); background: #eeeff7; border: 1px solid #dbdeec; border-radius: 0.75rem; padding: 28px; box-shadow: 0 1px 2px rgba(41, 35, 59, 0.06), 0 12px 32px rgba(41, 35, 59, 0.05); color: #29233b; font-family: ui-sans-serif, system-ui, sans-serif; } .ds-bridge-card h1 { margin: 0; font-size: 1.75rem; font-weight: 700; letter-spacing: -0.03em; line-height: 1.15; } .ds-bridge-card p { margin: 6px 0 0; font-size: 0.9rem; color: #664e4d; }"
     },
     {
       "name": "Field Input",
@@ -64,7 +64,7 @@
       "refersTo": "field-input",
       "description": "Recipient / chain-style field chrome.",
       "html": "<label class=\"ds-field\"><span>Recipient</span><input type=\"text\" placeholder=\"0x… or Solana address\" /></label>",
-      "css": ".ds-field { display: grid; gap: 8px; font: 600 13px ui-sans-serif, system-ui, sans-serif; color: #29233b; } .ds-field input { height: 52px; border: 1px solid #dbdeec; border-radius: 1rem; background: #fff; padding: 0 16px; font: 13px ui-monospace, SF Mono, Menlo, monospace; color: #29233b; } .ds-field input:focus { outline: none; border-color: #c8ccd9; } .ds-field input:focus-visible { outline: 2px solid #2a4f8a; outline-offset: 2px; }"
+      "css": ".ds-field { display: grid; gap: 8px; font: 600 13px ui-sans-serif, system-ui, sans-serif; color: #29233b; } .ds-field input { height: 48px; border: 1px solid #dbdeec; border-radius: 0.625rem; background: #fff; padding: 0 16px; font: 13px ui-monospace, SF Mono, Menlo, monospace; color: #29233b; } .ds-field input:focus { outline: none; border-color: #c8ccd9; } .ds-field input:focus-visible { outline: 2px solid #2a4f8a; outline-offset: 2px; }"
     },
     {
       "name": "Info Pill",
@@ -80,7 +80,7 @@
     "overview": "Relay’s UI is a task-first bridge console: a single high-radius card centered on cool paper, with system sans type, monospaced addresses, and chain marks. Light mode is lavender-tinted paper and violet ink; dark mode is near-black with a warm amber accent for primary actions and borders. Expression lives in density, status clarity, and honest mainnet warnings—not in marketing illustration.",
     "keyCharacteristics": [
       "Dual theme: cool paper + violet (light) / near-black + amber (dark)",
-      "High-radius surfaces for the bridge card and sheets",
+      "High-radius surfaces replaced with two-tier compact radii (12px cards, 10px controls)",
       "Centered operate layout with history and FAQ below",
       "Token-driven CSS variables",
       "System UI font stack; mono for addresses"
