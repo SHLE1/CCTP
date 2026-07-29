@@ -203,7 +203,7 @@ Hybrid: flat page background + one ambient card/sheet shadow + tonal field nesti
 
 - Compact geometry: card/sheet `0.75rem` (`--radius-4xl`)
 - Controls and fields: `0.625rem` (`--radius-2xl`)
-- Pills/toggles/theme control: full pill (`999px`)
+- Pills/toggles: full pill (`999px`)
 - Chain/USDC marks: circular; wallet marks ~10px radius squares
 - Borders: 1px semantic `--border`, strong on hover/focus
 
@@ -213,7 +213,8 @@ Hybrid: flat page background + one ambient card/sheet shadow + tonal field nesti
 - **Primary:** full-width 48px, radius 2xl, `--btn` / `--btn-text`, weight 700; disabled keeps full opacity with a muted fill (`--btn` 12% on `--field`) + `--muted` text + 1px border
 - **Ghost / secondary:** 34px height, radius 2xl, secondary border/bg tokens
 - **Icon button:** 34×34, radius 10px, field background
-- **Topbar tool:** min-height 40px, radius 2xl border
+- **Topbar nav item:** 36px hit height, radius 2xl, borderless, `--muted` text → hover/open `--field-soft` + `--text`; Recover rent, Docs, and the Explore trigger share it
+- **Theme toggle:** 40×40 icon-only, radius 2xl, `--theme-btn-*` bg/border — the sole framed control in the topbar
 
 ### Cards / Containers
 - **Bridge card:** surface + border + 4xl radius + shadow + 28px padding
@@ -231,6 +232,7 @@ Hybrid: flat page background + one ambient card/sheet shadow + tonal field nesti
 
 ### Navigation
 - Minimal topbar: 32px white-field C1 mark + CCTP One wordmark + optional tool links + theme toggle
+- External destinations live behind the single **Explore** disclosure trigger (3-group links panel, sheet tokens, `--radius-4xl` surface); never expand into inline link strips in the topbar
 - No multi-route app shell; primary IA is scroll sections
 
 ### Signature: Transfer progress sheet

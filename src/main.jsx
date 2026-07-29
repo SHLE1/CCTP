@@ -6,6 +6,7 @@ import {
   ArrowLeftRight,
   ArrowRight,
   Check,
+  ChevronDown,
   ChevronRight,
   CircleAlert,
   CircleCheck,
@@ -13,6 +14,7 @@ import {
   Coins,
   ExternalLink,
   Filter,
+  Globe,
   Info,
   LoaderCircle,
   Moon,
@@ -2116,6 +2118,113 @@ function TransferHistory({ environment, chains, onResume }) {
   )
 }
 
+// External bridge/swap destinations. Third-party sites (except Circle's bridge):
+// descriptions stay factual and non-evaluative — no endorsement language.
+const QUICK_LINKS = [
+  {
+    id: 'native',
+    label: 'Native USDC',
+    links: [
+      { name: 'CCTP.to', url: 'https://www.cctp.to/', desc: 'Third-party USDC bridge interface' },
+      { name: 'USDC Bridge', url: 'https://bridge.usdc.com/', desc: 'Circle official' },
+    ],
+  },
+  {
+    id: 'cross-chain',
+    label: 'Cross-chain',
+    links: [
+      { name: 'Relay', url: 'https://relay.link/', desc: 'Cross-chain transfers' },
+      { name: 'Stargate', url: 'https://stargate.finance/', desc: 'Cross-chain liquidity protocol' },
+      { name: 'Transporter', url: 'https://www.transporter.io/', desc: 'Built on Chainlink CCIP' },
+    ],
+  },
+  {
+    id: 'swap',
+    label: 'Swap',
+    links: [
+      { name: 'Jupiter', url: 'https://jup.ag/', desc: 'Solana swap aggregator' },
+      { name: 'KyberSwap', url: 'https://kyberswap.com/', desc: 'Multi-chain swap aggregator' },
+      { name: 'CoW Swap', url: 'https://swap.cow.fi/', desc: 'Intent-based swaps' },
+    ],
+  },
+]
+
+// Topbar disclosure popover listing external destinations. Closes on Escape (focus
+// returns to the trigger), outside pointer-down, or link activation.
+function QuickLinksMenu() {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef(null)
+  const triggerRef = useRef(null)
+  useEscapeToClose(open, () => {
+    setOpen(false)
+    triggerRef.current?.focus()
+  })
+
+  useEffect(() => {
+    if (!open) return undefined
+    const onPointerDown = (event) => {
+      if (rootRef.current && !rootRef.current.contains(event.target)) setOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    rootRef.current?.querySelector('.explore-link')?.focus()
+  }, [open])
+
+  const close = () => setOpen(false)
+
+  return (
+    <div className="explore" ref={rootRef}>
+      <button
+        type="button"
+        ref={triggerRef}
+        className="topbar-nav explore-trigger"
+        onClick={() => setOpen((current) => !current)}
+        aria-expanded={open}
+        aria-controls="explore-panel"
+        id="explore-trigger"
+        aria-label="Explore bridges and swaps"
+        title="Explore bridges and swaps"
+      >
+        <Globe size={14} />
+        <span className="topbar-nav-label">Explore</span>
+        <ChevronDown size={11} className="explore-chev" aria-hidden="true" />
+      </button>
+      {open && (
+        <nav className="explore-panel" id="explore-panel" aria-labelledby="explore-trigger">
+          {QUICK_LINKS.map((group) => (
+            <div className="explore-group" key={group.id}>
+              <span className="explore-group-label">{group.label}</span>
+              {group.links.map((link) => (
+                <a
+                  key={link.url}
+                  className="explore-link"
+                  href={link.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={close}
+                >
+                  <span className="explore-link-text">
+                    <strong>{link.name}</strong>
+                    <small>{link.desc}</small>
+                  </span>
+                  <ExternalLink size={12} aria-hidden="true" />
+                </a>
+              ))}
+            </div>
+          ))}
+          <p className="explore-note">
+            Third-party services, not operated or endorsed by CCTP One. Verify the network, token, and fees before continuing.
+          </p>
+        </nav>
+      )}
+    </div>
+  )
+}
+
 function resolveInitialTheme() {
   try {
     const saved = localStorage.getItem('relay:theme')
@@ -2179,7 +2288,7 @@ function App({ environment }) {
         <div className="topbar-right">
           <button
             type="button"
-            className="topbar-tool"
+            className="topbar-nav"
             onClick={() => setLookupOpen(true)}
             aria-haspopup="dialog"
             aria-expanded={lookupOpen}
@@ -2187,16 +2296,17 @@ function App({ environment }) {
             title="Recover Solana rent"
           >
             <Coins size={14} />
-            <span className="topbar-tool-label">Recover rent</span>
+            <span className="topbar-nav-label">Recover rent</span>
           </button>
           <a
-            className="topbar-link"
+            className="topbar-nav"
             href="https://developers.circle.com/cctp"
             target="_blank"
-            rel="noreferrer"
+            rel="noopener noreferrer"
           >
             Docs <ExternalLink size={12} />
           </a>
+          <QuickLinksMenu />
           <button
             type="button"
             className="theme-toggle"
