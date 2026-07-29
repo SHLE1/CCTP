@@ -132,13 +132,24 @@ const CHAIN_NAMES = {
   xdc: 'XDC',
 }
 
+// Rough usage-based ordering: corridors people actually bridge between come first,
+// the long tail follows alphabetically.
+const CHAIN_POPULARITY = [
+  'base', 'solana', 'arbitrum', 'sonic', 'ethereum', 'polygon', 'avalanche', 'monad',
+]
+
+const chainPopularityRank = (id) => {
+  const index = CHAIN_POPULARITY.indexOf(id)
+  return index === -1 ? CHAIN_POPULARITY.length : index
+}
+
 const makeChains = () => Object.entries(CHAIN_NAMES).map(([id, name]) => ({
   id,
   name,
   ...CHAIN_META[id],
   supportsFast: supportsFastTransfer(ENVIRONMENT, id),
   supportsForwarder: supportsForwarderDestination(ENVIRONMENT, id),
-}))
+})).sort((a, b) => chainPopularityRank(a.id) - chainPopularityRank(b.id) || a.name.localeCompare(b.name))
 
 const shortAddress = (value) => value ? `${value.slice(0, 5)}…${value.slice(-4)}` : ''
 const findChain = (chains, id) => chains.find((chain) => chain.id === id)
@@ -222,14 +233,14 @@ function formatQuoteCountdown(ms) {
   return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
-function ChainSelect({ chains, label, value, otherValue, onChange }) {
+function ChainSelect({ chains, label, value, otherValue, onChange, rpcLimited = false }) {
   const [open, setOpen] = useState(false)
   const selected = findChain(chains, value)
   useEscapeToClose(open, () => setOpen(false))
   return (
     <div className="field-group chain-field">
       <span className="field-label">{label}</span>
-      <button className="chain-trigger" onClick={() => setOpen(true)} aria-label={`Choose ${label.toLowerCase()} chain`}>
+      <button className="chain-trigger" onClick={() => setOpen(true)} aria-label={`Choose ${label.toLowerCase()}`}>
         <ChainMark chain={selected} />
         <span className="chain-name">{selected.name}</span>
         <ChevronRight className="chev" size={16} strokeWidth={2} />
@@ -253,7 +264,10 @@ function ChainSelect({ chains, label, value, otherValue, onChange }) {
                   <ChainMark chain={chain} />
                   <span>
                     <strong>{chain.name}</strong>
-                    <small>{chain.family === 'evm' ? 'EVM' : 'SVM'}</small>
+                    <small>
+                      {chain.family === 'evm' ? 'EVM' : 'SVM'}
+                      {rpcLimited && chain.id === 'solana' ? ' · needs dedicated RPC' : ''}
+                    </small>
                   </span>
                   {chain.id === value && <Check size={16} />}
                   {chain.id === otherValue && <small className="in-use">In use</small>}
@@ -650,7 +664,10 @@ function ProgressModal({
 function BridgeCard({ environment, chains, resumeRequest = 0 }) {
   const solanaWalletState = useWallet()
   const [sourceId, setSourceId] = useState('base')
-  const [destinationId, setDestinationId] = useState('solana')
+  // Default to a corridor this build can actually serve: Solana needs a private RPC.
+  const [destinationId, setDestinationId] = useState(() => (
+    usesPublicSolanaRpc(environment) ? 'arbitrum' : 'solana'
+  ))
   const [amount, setAmount] = useState('')
   const [speed, setSpeed] = useState('fast')
   const [settlementMode, setSettlementMode] = useState('manual')
@@ -1522,20 +1539,20 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
       )}
 
       {rpcNotReady && (
-        <div className="rpc-banner blocking" role="alert">
+        <div className="rpc-banner" role="status">
           <Info size={14} />
           <span>
-            Mainnet Solana transfers are disabled while using a public RPC. Set <code>VITE_SOLANA_MAINNET_RPC</code> and restart the app.
+            Solana routes stay off on this build's public RPC. Pick an EVM pair, or run your own Solana RPC to enable them.
           </span>
         </div>
       )}
 
       <div className="chain-grid">
-        <ChainSelect chains={chains} label="Source Chain" value={sourceId} otherValue={destinationId} onChange={setSource} />
+        <ChainSelect chains={chains} label="Source Chain" value={sourceId} otherValue={destinationId} onChange={setSource} rpcLimited={publicSolanaRpc} />
         <button className="swap-button" onClick={swap} aria-label="Swap chains">
           <ArrowLeftRight size={15} />
         </button>
-        <ChainSelect chains={chains} label="Destination Chain" value={destinationId} otherValue={sourceId} onChange={setDestination} />
+        <ChainSelect chains={chains} label="Destination Chain" value={destinationId} otherValue={sourceId} onChange={setDestination} rpcLimited={publicSolanaRpc} />
       </div>
 
       <div className="amount-panel">
@@ -1735,7 +1752,7 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
       >
         {(autoQuoteReady || quote.status === 'loading') && <LoaderCircle className="spin" size={16} />}
         {rpcNotReady
-          ? 'Configure Solana RPC'
+          ? 'Solana RPC unavailable'
           : !wallet
             ? 'Connect source wallet'
             : needsDestinationWallet

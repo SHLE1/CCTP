@@ -31,10 +31,16 @@ colors:
 typography:
   display:
     fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-    fontSize: "1.75rem"
-    fontWeight: 700
-    lineHeight: 1.15
+    fontSize: "2.75rem"
+    fontWeight: 600
+    lineHeight: 1.1
     letterSpacing: "-0.03em"
+  card-title:
+    fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+    fontSize: "1.25rem"
+    fontWeight: 600
+    lineHeight: 1.2
+    letterSpacing: "-0.02em"
   headline:
     fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
     fontSize: "1.35rem"
@@ -161,12 +167,12 @@ Dual-theme palette driven by CSS custom properties on `:root`, `[data-theme='lig
 **Character:** Dense operator UI: tight letter-spacing on titles, medium weight on amounts, no display serif or custom webfonts.
 
 ### Hierarchy
-- **Display** (700, 1.75rem, lh 1.15, tracking -0.03em): Bridge card `h1`
+- **Display** (600, 2.75rem, tracking -0.03em, tabular-nums): Amount input hero — money is the loudest object
 - **Headline** (700, ~1.35rem): History section titles
 - **Title** (700, 17px): Sheet/modal headings
 - **Body** (400, ~0.9rem, lh 1.45): Subtitles and helper copy
 - **Label** (600, 13px): Field labels, pill text scale
-- **Amount** (500, ~1.85rem, tracking -0.03em): Amount input
+- **Card title** (600, 1.25rem, tracking -0.02em): Bridge card `h1`, demoted below the amount
 - **Mono** (13px+): Recipient fields, connected address, `code` in banners
 
 **The System Stack Rule.** Stay on platform fonts; do not add marketing webfonts that change layout shift or CSP font sources without intent.
@@ -174,10 +180,10 @@ Dual-theme palette driven by CSS custom properties on `:root`, `[data-theme='lig
 ## Layout
 
 - App column: topbar (64px) → main (flex start) → footer
-- Primary surface: `.bridge-card` at `min(720px, 100%)` with `32px 32px 38px` padding
+- Primary surface: `.bridge-card` at `min(860px, 100%)` with `24px 32px 28px` padding; the full card (through the trust line) fits a 1280×800 viewport without scrolling
 - Chain row: 3-column grid `1fr 44px 1fr` (source | swap | destination)
 - Secondary width for history: `min(900px, 100%)`
-- Main padding: 38px 16px 64px; gaps 16px
+- Main padding: 24px 16px 56px; gaps 16px
 - Breakpoints observed: `900px`, `560px` (stack/tighten); min body width 320px
 
 **The Single Card Rule.** The transfer task lives in one elevated card; supporting tools (history and LUT) sit below without competing for the same visual weight.
@@ -187,7 +193,7 @@ Dual-theme palette driven by CSS custom properties on `:root`, `[data-theme='lig
 Hybrid: flat page background + one ambient card/sheet shadow + tonal field nesting.
 
 ### Shadow Vocabulary
-- **Light ambient** (`0 16px 48px rgba(41, 35, 59, 0.08)`): Bridge card and sheets
+- **Light ambient** (`0 24px 64px rgba(41, 35, 59, 0.14)`): Bridge card and sheets
 - **Dark ambient** (`0 8px 24px rgba(0, 0, 0, 0.45)`): Same roles in dark theme
 - **Modal backdrop**: light `rgba(25, 16, 15, 0.35)` / dark `rgba(0, 0, 0, 0.65)`
 
@@ -204,7 +210,7 @@ Hybrid: flat page background + one ambient card/sheet shadow + tonal field nesti
 ## Components
 
 ### Buttons
-- **Primary:** full-width 56px, radius 2xl, `--btn` / `--btn-text`, weight 700; disabled opacity 0.4
+- **Primary:** full-width 52px, radius 2xl, `--btn` / `--btn-text`, weight 700; disabled keeps full opacity with a muted fill (`--btn` 12% on `--field`) + `--muted` text + 1px border
 - **Ghost / secondary:** 34px height, pill, secondary border/bg tokens
 - **Icon button:** 34×34, radius 10px, field background
 - **Topbar tool:** min-height 34px, pill border
@@ -214,9 +220,9 @@ Hybrid: flat page background + one ambient card/sheet shadow + tonal field nesti
 - **Sheets:** max ~400px (progress sheet may differ), same surface language
 
 ### Inputs / Fields
-- Chain triggers and recipient: 56px height, field bg, 2xl radius
-- Amount panel: min-height 94px with fixed USDC identity; CCTP One does not expose an asset selector
-- Completion method: collapsed summary by default, with Self-claim and Orbit controls disclosed on demand
+- Chain triggers: 54px height; recipient: 52px; primary CTA: 52px. Field bg, 2xl radius
+- Amount panel: min-height 96px with fixed USDC identity; the amount input is the display hero (2.75rem/600); CCTP One does not expose an asset selector
+- Completion method: collapsed 66px summary by default, with Self-claim and Orbit controls disclosed on demand
 - Focus: stronger border (`--border-strong` or pill-fg on filters); limited `:focus-visible` usage today
 
 ### Pills / Chips

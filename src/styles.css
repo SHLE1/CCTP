@@ -50,7 +50,7 @@
   --warn-border: #fde68a;
   --green: #059669;
   --modal-backdrop: rgba(25, 16, 15, 0.35);
-  --shadow: 0 16px 48px rgba(41, 35, 59, 0.08);
+  --shadow: 0 24px 64px rgba(41, 35, 59, 0.14);
   --mainnet-fg: #b45309;
   --mainnet-border: #f0c28a;
   --mainnet-bg: #fff8ee;
@@ -137,7 +137,7 @@ html:not([data-theme]) {
   --warn-border: #fde68a;
   --green: #059669;
   --modal-backdrop: rgba(25, 16, 15, 0.35);
-  --shadow: 0 16px 48px rgba(41, 35, 59, 0.08);
+  --shadow: 0 24px 64px rgba(41, 35, 59, 0.14);
   --mainnet-fg: #b45309;
   --mainnet-border: #f0c28a;
   --mainnet-bg: #fff8ee;
@@ -265,7 +265,7 @@ main {
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  padding: 38px 16px 64px;
+  padding: 24px 16px 56px;
   gap: 16px;
   position: relative;
   /* Keep fixed dialogs in the root stacking context so their backdrop covers the topbar. */
@@ -274,11 +274,11 @@ main {
 
 /* ── Bridge card ── */
 .bridge-card {
-  width: min(720px, 100%);
+  width: min(860px, 100%);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-4xl);
-  padding: 32px 32px 38px;
+  padding: 24px 32px 28px;
   box-shadow: var(--shadow);
 }
 
@@ -287,7 +287,7 @@ main {
   justify-content: space-between;
   align-items: flex-start;
   gap: 16px;
-  margin-bottom: 36px;
+  margin-bottom: 18px;
 }
 .card-title {
   display: flex;
@@ -297,9 +297,9 @@ main {
 }
 .bridge-icon {
   flex: 0 0 auto;
-  width: 60px;
-  height: 60px;
-  border-radius: 16px;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-2xl);
   background: var(--field);
   border: 1px solid var(--border);
   display: grid;
@@ -308,8 +308,8 @@ main {
   margin-top: 1px;
 }
 .bridge-icon svg {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
 }
 [data-theme='dark'] .bridge-icon {
   border-color: rgba(255, 148, 1, 0.25);
@@ -317,10 +317,10 @@ main {
 }
 .card-title h1 {
   margin: 0;
-  font-size: 2rem;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  line-height: 1.15;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
   color: var(--text);
 }
 .card-sub {
@@ -359,7 +359,7 @@ main {
   grid-template-columns: 1fr 44px 1fr;
   align-items: end;
   gap: 12px;
-  margin-bottom: 32px;
+  margin-bottom: 16px;
 }
 .field-group { min-width: 0; }
 .field-label {
@@ -371,7 +371,7 @@ main {
 }
 .chain-trigger {
   width: 100%;
-  height: 56px;
+  height: 54px;
   border: 1px solid var(--border);
   border-radius: var(--radius-2xl);
   background: var(--field);
@@ -431,7 +431,7 @@ main {
 }
 
 /* Amount */
-.amount-panel { margin-bottom: 24px; }
+.amount-panel { margin-bottom: 16px; }
 .amount-row {
   display: flex;
   align-items: center;
@@ -439,7 +439,7 @@ main {
   border: 1px solid var(--border);
   border-radius: var(--radius-2xl);
   padding: 0;
-  min-height: 94px;
+  min-height: 96px;
   overflow: hidden;
 }
 .asset-pill {
@@ -459,8 +459,8 @@ main {
   color: var(--text);
 }
 .usdc-mark {
-  width: 38px;
-  height: 38px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
   object-fit: cover;
   display: block;
@@ -482,7 +482,7 @@ main {
   flex-direction: column;
   align-items: flex-end;
   gap: 4px;
-  padding: 14px 18px;
+  padding: 10px 20px;
 }
 .amount-input-wrap input {
   width: 100%;
@@ -490,9 +490,10 @@ main {
   outline: 0;
   background: transparent;
   text-align: right;
-  font-size: 2rem;
-  font-weight: 500;
+  font-size: 2.75rem;
+  font-weight: 600;
   letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
   color: var(--text);
   padding: 0;
   border-radius: 8px;
@@ -633,15 +634,6 @@ summary:focus-visible,
   outline: 2px solid var(--pill-fg);
   outline-offset: 2px;
 }
-.rpc-banner code {
-  font-family: var(--font-mono);
-  font-size: 11px;
-}
-.rpc-banner.blocking {
-  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
-  background: var(--danger-bg);
-  color: var(--danger);
-}
 .progress-hint {
   margin: 0 0 12px;
   font-size: 12px;
@@ -658,7 +650,7 @@ summary:focus-visible,
   overflow: hidden;
 }
 .completion-method > summary {
-  min-height: 88px;
+  min-height: 66px;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -772,7 +764,7 @@ summary:focus-visible,
   display: flex;
   align-items: flex-start;
   gap: 7px;
-  margin: 0 0 18px;
+  margin: 0 0 12px;
   padding: 0 4px;
   border: 0;
   border-radius: 0;
@@ -788,7 +780,7 @@ summary:focus-visible,
 }
 
 /* Recipient */
-.recipient-panel { margin-bottom: 20px; }
+.recipient-panel { margin-bottom: 14px; }
 .amount-meta {
   display: flex;
   justify-content: space-between;
@@ -798,7 +790,7 @@ summary:focus-visible,
 .amount-meta .field-label { margin: 0; }
 .recipient-panel > input {
   width: 100%;
-  height: 56px;
+  height: 52px;
   border: 1px solid var(--border);
   border-radius: var(--radius-2xl);
   background: var(--field);
@@ -837,8 +829,8 @@ summary:focus-visible,
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin: 0 0 18px;
-  padding: 14px 4px 0;
+  margin: 0 0 12px;
+  padding: 8px 4px 0;
   border-top: 1px solid var(--border);
   flex-wrap: wrap;
 }
@@ -952,7 +944,7 @@ summary:focus-visible,
 
 .primary-button {
   width: 100%;
-  height: 56px;
+  height: 52px;
   border: 0;
   border-radius: var(--radius-2xl);
   background: var(--btn);
@@ -966,11 +958,16 @@ summary:focus-visible,
   letter-spacing: -0.01em;
 }
 .primary-button:hover:not(:disabled) { opacity: 0.92; }
-.primary-button:disabled { opacity: 0.4; cursor: not-allowed; }
+.primary-button:disabled {
+  cursor: not-allowed;
+  background: color-mix(in srgb, var(--btn) 12%, var(--field));
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
 .spin { animation: spin 0.9s linear infinite; }
 .card-trust {
-  margin: 14px 0 0;
-  color: var(--muted);
+  margin: 8px 0 0;
+  color: var(--faint);
   font-size: 12px;
   font-weight: 500;
   text-align: center;
@@ -2414,7 +2411,7 @@ summary:focus-visible,
   .bridge-card { padding: 20px 16px; border-radius: 1.5rem; }
   .card-topline { flex-direction: column; align-items: stretch; margin-bottom: 22px; }
   .card-actions { flex-direction: row; align-items: center; justify-content: space-between; }
-  .card-title h1 { font-size: 1.45rem; }
+  .card-title h1 { font-size: 1.1rem; }
   .card-sub { max-width: none; }
   .bridge-icon {
     width: 48px;
@@ -2443,7 +2440,7 @@ summary:focus-visible,
   .settlement-panel { grid-template-columns: 1fr; }
   .meta-row { flex-direction: column; align-items: stretch; }
   .fast-toggle { margin-left: 0; justify-content: space-between; width: 100%; }
-  .amount-input-wrap input { font-size: 1.5rem; }
+  .amount-input-wrap input { font-size: 1.9rem; }
   .asset-pill {
     min-width: 118px;
     padding: 0 12px;
