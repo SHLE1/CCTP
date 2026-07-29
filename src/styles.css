@@ -492,6 +492,11 @@ main {
   padding: 0;
   min-height: 96px;
   overflow: hidden;
+  transition: border-color 120ms ease;
+}
+.amount-row:focus-within { border-color: var(--pill-fg); }
+.amount-row:has(.amount-input-wrap input:focus-visible) {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pill-fg) 22%, transparent);
 }
 .asset-pill {
   display: flex;
@@ -499,8 +504,7 @@ main {
   gap: 10px;
   align-self: stretch;
   min-width: 158px;
-  background: transparent;
-  border-right: 1px solid var(--border);
+  background: var(--field-soft);
   border-radius: 0;
   padding: 0 18px;
   font-size: 16px;
@@ -533,7 +537,7 @@ main {
   flex-direction: column;
   align-items: flex-end;
   gap: 4px;
-  padding: 10px 20px;
+  padding: 12px 24px;
 }
 .amount-input-wrap input {
   width: 100%;
@@ -547,13 +551,10 @@ main {
   font-variant-numeric: tabular-nums;
   color: var(--text);
   padding: 0;
-  border-radius: 8px;
 }
 .amount-input-wrap input::placeholder { color: var(--faint); }
-.amount-input-wrap input:focus-visible {
-  outline: 2px solid var(--pill-fg);
-  outline-offset: 2px;
-}
+/* Focus is announced on .amount-row; keep the input itself ring-free. */
+.amount-input-wrap input:focus-visible { outline: 0; }
 .balance-hint {
   display: inline-flex;
   align-items: center;
@@ -2500,7 +2501,7 @@ summary:focus-visible,
     font-size: 14px;
   }
   .usdc-mark { width: 32px; height: 32px; }
-  .amount-input-wrap { padding: 12px; }
+  .amount-input-wrap { padding: 12px 16px; }
   .completion-method > summary { padding: 12px; }
   .completion-method-change {
     width: 16px;
