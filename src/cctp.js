@@ -512,6 +512,81 @@ async function evmJsonRpc(definition, method, params) {
   throw lastError || new Error('No EVM RPC endpoints available')
 }
 
+const CCTP_RECEIVE_MESSAGE_SELECTOR = '0x57ecfd28'
+
+function markClaimAlreadyCompleted(result, stepIndex) {
+  const steps = [...(result.steps || [])]
+  steps[stepIndex] = {
+    ...steps[stepIndex],
+    state: 'noop',
+    errorMessage: 'Claim was already completed on-chain.',
+    errorCategory: undefined,
+  }
+  return { ...result, state: 'success', steps }
+}
+
+/**
+ * A relayer and a self-claim can race for the same CCTP message. If the later
+ * receiveMessage transaction reverts because its nonce was already consumed,
+ * the transfer is complete rather than failed.
+ */
+export async function reconcileAlreadyCompletedClaim(result, environment) {
+  if (result?.state !== 'error' || !Array.isArray(result.steps)) return result
+
+  let stepIndex = -1
+  for (let index = result.steps.length - 1; index >= 0; index -= 1) {
+    if (result.steps[index]?.state !== 'error') continue
+    stepIndex = index
+    break
+  }
+  const step = result.steps[stepIndex]
+  if (
+    stepIndex < 0
+    || !/(?:mint|claim|forward)/i.test(String(step?.name || ''))
+    || !/^0x[0-9a-f]{64}$/i.test(String(step?.txHash || ''))
+  ) {
+    return result
+  }
+
+  const destinationId = findChainIdForDefinition(environment, result.destination?.chain)
+  if (!destinationId) return result
+  const definition = getDefinition(environment, destinationId)
+  const messageTransmitter = definition.cctp?.contracts?.v2?.messageTransmitter
+  if (definition.type !== 'evm' || !messageTransmitter) return result
+
+  try {
+    const [receipt, transaction] = await Promise.all([
+      evmJsonRpc(definition, 'eth_getTransactionReceipt', [step.txHash]),
+      evmJsonRpc(definition, 'eth_getTransactionByHash', [step.txHash]),
+    ])
+    if (
+      !receipt
+      || !transaction
+      || BigInt(receipt.status) !== 0n
+      || String(transaction.to || '').toLowerCase() !== messageTransmitter.toLowerCase()
+      || !String(transaction.input || '').toLowerCase().startsWith(CCTP_RECEIVE_MESSAGE_SELECTOR)
+    ) {
+      return result
+    }
+
+    try {
+      await evmJsonRpc(definition, 'eth_call', [{
+        from: transaction.from,
+        to: transaction.to,
+        data: transaction.input,
+        value: transaction.value || '0x0',
+      }, 'latest'])
+    } catch (error) {
+      if (/nonce already used/i.test(String(error?.message || error))) {
+        return markClaimAlreadyCompleted(result, stepIndex)
+      }
+    }
+  } catch {
+    // Reconciliation is best-effort; an unavailable RPC must not invent success.
+  }
+  return result
+}
+
 export async function fetchUsdcBalance(environment, chainId, address, provider) {
   if (!address) return null
   const definition = getDefinition(environment, chainId)

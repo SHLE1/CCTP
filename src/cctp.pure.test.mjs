@@ -33,6 +33,7 @@ import {
   listChainIds,
   loadTransferHistory,
   normalizeRetryResult,
+  reconcileAlreadyCompletedClaim,
   persistTransfer,
   supportsFastTransfer,
   supportsForwarderDestination,
@@ -667,6 +668,96 @@ describe('mainnet transfer safety invariants', () => {
     )
   })
 
+  it('reconciles a duplicate CCTP claim revert as an on-chain success', async () => {
+    const previousFetch = globalThis.fetch
+    const destination = getDefinition('mainnet', 'sonic')
+    const failedHash = `0x${'1'.repeat(64)}`
+    const result = {
+      ...createTransferDraft({
+        environment: 'mainnet',
+        sourceId: 'base',
+        destinationId: 'sonic',
+        amount: '10.98807',
+        recipient: '0xd6fab449d7e06122e8eda3726efb2c813cecc19c',
+        destinationWalletAddress: '0xd6fab449d7e06122e8eda3726efb2c813cecc19c',
+        speed: 'fast',
+        maxFee: '0.01',
+        useForwarder: false,
+      }, '0xd6fab449d7e06122e8eda3726efb2c813cecc19c'),
+      state: 'error',
+      steps: [
+        { name: 'burn', state: 'success', txHash: `0x${'2'.repeat(64)}` },
+        {
+          name: 'mint',
+          state: 'error',
+          txHash: failedHash,
+          errorMessage: 'Transaction reverted',
+          errorCategory: 'chain_revert',
+        },
+      ],
+    }
+
+    try {
+      globalThis.fetch = async (_url, options) => {
+        const request = JSON.parse(options.body)
+        let payload
+        if (request.method === 'eth_getTransactionReceipt') {
+          payload = { result: { status: '0x0' } }
+        } else if (request.method === 'eth_getTransactionByHash') {
+          payload = {
+            result: {
+              from: result.destination.address,
+              to: destination.cctp.contracts.v2.messageTransmitter,
+              input: '0x57ecfd28deadbeef',
+              value: '0x0',
+            },
+          }
+        } else if (request.method === 'eth_call') {
+          payload = { error: { message: 'execution reverted: Nonce already used' } }
+        } else {
+          throw new Error(`Unexpected RPC method: ${request.method}`)
+        }
+        return { ok: true, json: async () => payload }
+      }
+
+      const reconciled = await reconcileAlreadyCompletedClaim(result, 'mainnet')
+      assert.equal(reconciled.state, 'success')
+      assert.equal(reconciled.steps[1].state, 'noop')
+      assert.equal(reconciled.steps[1].txHash, failedHash)
+      assert.equal(reconciled.steps[1].errorMessage, 'Claim was already completed on-chain.')
+
+      globalThis.fetch = async (_url, options) => {
+        const request = JSON.parse(options.body)
+        if (request.method === 'eth_getTransactionReceipt') {
+          return { ok: true, json: async () => ({ result: { status: '0x0' } }) }
+        }
+        if (request.method === 'eth_getTransactionByHash') {
+          return {
+            ok: true,
+            json: async () => ({
+              result: {
+                from: result.destination.address,
+                to: destination.cctp.contracts.v2.messageTransmitter,
+                input: '0x57ecfd28deadbeef',
+                value: '0x0',
+              },
+            }),
+          }
+        }
+        return {
+          ok: true,
+          json: async () => ({ error: { message: 'execution reverted: Invalid attestation' } }),
+        }
+      }
+      assert.equal(
+        (await reconcileAlreadyCompletedClaim(result, 'mainnet')).state,
+        'error',
+      )
+    } finally {
+      globalThis.fetch = previousFetch
+    }
+  })
+
   it('treats storage failures as non-fatal and detectable', () => {
     const previousStorageDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
     try {
@@ -758,21 +849,43 @@ describe('mainnet transfer safety invariants', () => {
       assert.equal(history[0].destinationId, 'solana')
       assert.equal(history[0].explorerLinks[0].url, 'https://sepolia.basescan.org/tx/0xabc')
 
-      assert.equal(persistTransfer({
+      const failedClaim = {
         ...draft,
         amount: '13',
         state: 'error',
-        steps: [{
-          name: 'burn',
-          state: 'error',
-          txHash: '0xfailed',
-          errorCategory: 'chain_revert',
-        }],
-      }, 'testnet'), true)
+        steps: [
+          { name: 'burn', state: 'success', txHash: '0xburn13' },
+          {
+            name: 'mint',
+            state: 'error',
+            txHash: '0xfailed',
+            errorCategory: 'chain_revert',
+          },
+        ],
+      }
+      assert.equal(persistTransfer(failedClaim, 'testnet'), true)
       const withOnChainFailure = loadTransferHistory('testnet')
       assert.equal(withOnChainFailure.length, 2)
       assert.equal(withOnChainFailure[0].state, 'error')
-      assert.equal(withOnChainFailure[0].retryable, false)
+      assert.equal(withOnChainFailure[0].retryable, true)
+
+      assert.equal(persistTransfer({
+        ...failedClaim,
+        state: 'success',
+        steps: [
+          failedClaim.steps[0],
+          {
+            ...failedClaim.steps[1],
+            state: 'noop',
+            errorMessage: 'Claim was already completed on-chain.',
+            errorCategory: undefined,
+          },
+        ],
+      }, 'testnet'), true)
+      const reconciledHistory = loadTransferHistory('testnet')
+      assert.equal(reconciledHistory.length, 2)
+      assert.equal(reconciledHistory[0].state, 'success')
+      assert.equal(reconciledHistory[0].txHashes.includes('0xfailed'), true)
     } finally {
       if (previousStorageDescriptor) {
         Object.defineProperty(globalThis, 'localStorage', previousStorageDescriptor)

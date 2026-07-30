@@ -58,6 +58,7 @@ import {
   quoteFeeBreakdown,
   resolveAmountFieldError,
   retryTransfer,
+  reconcileAlreadyCompletedClaim,
   safeExplorerUrl,
   sanitizeAmountInput,
   shouldAutoQuote,
@@ -1212,13 +1213,21 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
         if (!persistTransfer(activeTransferRef.current, environment)) {
           throw new Error('The recovery snapshot could not be saved. Retry was not started.')
         }
-        result = await retryTransfer(
-          resultForRetry,
-          wallet,
-          activeClaimWallet,
+        const reconciled = await reconcileAlreadyCompletedClaim(
+          activeTransferRef.current,
           environment,
-          handleBridgeEvent,
         )
+        if (reconciled.state === 'success') {
+          result = reconciled
+        } else {
+          result = await retryTransfer(
+            resultForRetry,
+            wallet,
+            activeClaimWallet,
+            environment,
+            handleBridgeEvent,
+          )
+        }
       } else {
         const quoteStillFresh = quote.status === 'ready'
           && quote.key === currentQuoteKey
@@ -1291,6 +1300,7 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
         }
         result = await executeTransfer(input, handleBridgeEvent)
       }
+      result = await reconcileAlreadyCompletedClaim(result, environment)
 
       const stored = persistTransfer(result, environment)
       const failed = result.state !== 'success'
@@ -1318,13 +1328,18 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
       }
     } catch (error) {
       const partialResult = activeTransferRef.current || transfer.result
-      if (partialResult) persistTransfer(partialResult, environment)
+      const reconciled = partialResult
+        ? await reconcileAlreadyCompletedClaim(partialResult, environment)
+        : null
+      if (reconciled) persistTransfer(reconciled, environment)
       setTransfer((current) => ({
         ...current,
-        phase: 'error',
-        error: friendlyError(error),
-        result: partialResult || current.result,
-        canRetry: isRetryableBridgeResult(partialResult || current.result),
+        phase: reconciled?.state === 'success' ? 'success' : 'error',
+        error: reconciled?.state === 'success' ? '' : friendlyError(error),
+        result: reconciled || current.result,
+        canRetry: reconciled?.state === 'success'
+          ? false
+          : isRetryableBridgeResult(reconciled || current.result),
       }))
     } finally {
       activeTransferRef.current = null
@@ -1349,11 +1364,19 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
     setQuote({ status: 'idle', data: null, error: '', key: '', quotedAt: 0 })
   }
 
-  function resumeLastTransfer() {
+  async function resumeLastTransfer() {
     const saved = loadPersistedTransfer(environment)
     if (!saved) {
       window.alert('No saved transfer found in this browser. After a partial transfer you can retry from here.')
       return
+    }
+    if (!saved.legacy && saved.result?.state === 'error') {
+      const reconciled = await reconcileAlreadyCompletedClaim(saved.result, environment)
+      if (reconciled.state === 'success') {
+        saved.result = reconciled
+        saved.retryable = false
+        persistTransfer(reconciled, environment)
+      }
     }
     const state = saved.result?.state || saved.summary?.state
     const steps = saved.result?.steps || saved.summary?.steps || []
