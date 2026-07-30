@@ -2009,6 +2009,8 @@ summary:focus-visible,
 .manual-claim-hash { margin-bottom: 12px; }
 .manual-claim-route { margin-bottom: 12px; }
 .manual-claim-details { margin: 0 0 14px; }
+.manual-claim-status.claimed { color: var(--green); }
+.manual-claim-status.unknown { color: var(--warn); }
 .manual-claim-success {
   border-color: color-mix(in srgb, var(--green) 35%, var(--border));
   color: var(--text);

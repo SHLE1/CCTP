@@ -433,6 +433,13 @@ function ManualClaimModal({
       )
     : ''
   const amount = claim ? formatUsdcFromMicro(BigInt(claim.amountMicro)) : ''
+  const destinationStatus = claim?.destinationStatus || null
+  const alreadyClaimed = destinationStatus?.state === 'claimed'
+  const claimStatusLabel = alreadyClaimed
+    ? 'Already claimed'
+    : destinationStatus?.state === 'unknown'
+      ? 'Status unavailable'
+      : 'Ready to claim'
   useEscapeToClose(true, onClose, !busy && !walletModalOpen)
 
   function resetClaim(nextSourceId = sourceId, nextHash = transactionHash) {
@@ -456,8 +463,11 @@ function ManualClaimModal({
     try {
       const nextClaim = await fetchManualClaim(environment, sourceId, transactionHash)
       setClaim(nextClaim)
-      setResult(null)
-      setPhase('ready')
+      const completed = nextClaim.destinationStatus?.state === 'claimed'
+        ? { ...nextClaim.destinationStatus, preExisting: true }
+        : null
+      setResult(completed)
+      setPhase(completed ? 'success' : 'ready')
     } catch (nextError) {
       setError(friendlyError(nextError))
       setPhase('input')
@@ -483,6 +493,7 @@ function ManualClaimModal({
   }
 
   function primaryAction() {
+    if (phase === 'success') return onClose()
     if (!claim) return findTransfer()
     if (!claimWallet) {
       setWalletModalOpen(true)
@@ -496,7 +507,7 @@ function ManualClaimModal({
     : phase === 'claiming'
       ? 'Claiming on destination…'
       : phase === 'success'
-        ? 'Claim complete'
+        ? 'Done'
         : !claim
           ? 'Find transfer'
           : blockReason
@@ -568,10 +579,21 @@ function ManualClaimModal({
               <strong>{destination.name}</strong>
               <span>Mint recipient</span>
               <code>{shortAddress(claim.mintRecipient)}</code>
-              <span>Destination gas</span>
-              <strong>Paid by claim wallet</strong>
+              {destinationStatus && (
+                <>
+                  <span>Claim status</span>
+                  <strong
+                    className={`manual-claim-status ${destinationStatus.state}`}
+                    role="status"
+                  >
+                    {claimStatusLabel}
+                  </strong>
+                </>
+              )}
+              <span>{alreadyClaimed ? 'Next step' : 'Destination gas'}</span>
+              <strong>{alreadyClaimed ? 'No action required' : 'Paid by claim wallet'}</strong>
             </div>
-            {destination.family === 'solana' && (
+            {destination.family === 'solana' && phase !== 'success' && (
               <div className="recipient-panel">
                 <span className="field-label" id="manual-claim-recipient-label">
                   Solana recipient wallet
@@ -586,7 +608,7 @@ function ManualClaimModal({
                 />
               </div>
             )}
-            {claimWallet && (
+            {claimWallet && phase !== 'success' && (
               <div className="connected-row">
                 <span><Wallet size={14} />Claim · {shortAddress(claimWallet.address)}</span>
                 <button
@@ -598,7 +620,7 @@ function ManualClaimModal({
                 </button>
               </div>
             )}
-            {blockReason && (
+            {blockReason && phase !== 'success' && (
               <div className="error-message" role="alert">
                 <Info size={14} />
                 <span>{blockReason}</span>
@@ -620,7 +642,14 @@ function ManualClaimModal({
           <div className="mode-callout manual-claim-success" role="status">
             <CircleCheck size={16} />
             <span>
-              <strong>USDC claimed on {destination.name}.</strong>
+              <strong>
+                {result.preExisting
+                  ? `Already claimed on ${destination.name}.`
+                  : `USDC claimed on ${destination.name}.`}
+              </strong>
+              {result.preExisting && (
+                <span>This burn is complete. No wallet connection or further action is needed.</span>
+              )}
               {result.explorerUrl && (
                 <> <a href={result.explorerUrl} target="_blank" rel="noreferrer">View transaction <ExternalLink size={12} /></a></>
               )}
@@ -633,12 +662,12 @@ function ManualClaimModal({
           type="button"
           className="primary-button"
           onClick={primaryAction}
-          disabled={busy || phase === 'success' || Boolean(claim && blockReason)}
+          disabled={busy || Boolean(claim && blockReason && phase !== 'success')}
         >
           {busy && <LoaderCircle className="spin" size={16} />}
           {primaryLabel}
         </button>
-        {claim && phase !== 'success' && !busy && (
+        {claim && !busy && (phase !== 'success' || result?.preExisting) && (
           <button
             type="button"
             className="manual-claim-reset"

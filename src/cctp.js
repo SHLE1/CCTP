@@ -238,15 +238,15 @@ export function supportsForwarderDestination(environment, chainId) {
 export function getSolanaRpcEndpoint(environment) {
   const definition = getDefinition(environment, 'solana')
   const configured = environment === 'mainnet'
-    ? import.meta.env.VITE_SOLANA_MAINNET_RPC
-    : import.meta.env.VITE_SOLANA_DEVNET_RPC
+    ? import.meta.env?.VITE_SOLANA_MAINNET_RPC
+    : import.meta.env?.VITE_SOLANA_DEVNET_RPC
   return (typeof configured === 'string' && configured.trim()) || definition.rpcEndpoints[0]
 }
 
 export function usesPublicSolanaRpc(environment) {
   const configured = environment === 'mainnet'
-    ? import.meta.env.VITE_SOLANA_MAINNET_RPC
-    : import.meta.env.VITE_SOLANA_DEVNET_RPC
+    ? import.meta.env?.VITE_SOLANA_MAINNET_RPC
+    : import.meta.env?.VITE_SOLANA_DEVNET_RPC
   return !(typeof configured === 'string' && configured.trim())
 }
 
@@ -914,6 +914,64 @@ async function fetchManualClaimResponse(environment, sourceDomain, transactionHa
   return message
 }
 
+async function fetchSolanaRpc(environment, method, params) {
+  const response = await fetch(getSolanaRpcEndpoint(environment), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+  })
+  if (!response.ok) throw new Error(`Solana RPC returned HTTP ${response.status}`)
+  const payload = await response.json()
+  if (payload.error) throw new Error(payload.error.message || 'Solana RPC error')
+  return payload.result
+}
+
+async function getSolanaManualClaimStatus(environment, destination, eventNonce) {
+  try {
+    const messageTransmitter = new PublicKey(
+      destination.cctp.contracts.v2.messageTransmitter,
+    )
+    const nonceHex = String(eventNonce).replace(/^0x/i, '')
+    if (!/^[0-9a-fA-F]{64}$/.test(nonceHex)) throw new Error('invalid event nonce')
+    const nonce = Uint8Array.from(
+      nonceHex.match(/.{2}/g).map((byte) => Number.parseInt(byte, 16)),
+    )
+    const [usedNonce] = PublicKey.findProgramAddressSync(
+      [new TextEncoder().encode('used_nonce'), nonce],
+      messageTransmitter,
+    )
+    const account = await fetchSolanaRpc(environment, 'getAccountInfo', [
+      usedNonce.toString(),
+      { encoding: 'base64', commitment: 'confirmed' },
+    ])
+    if (!account?.value) return { state: 'ready' }
+    if (account.value.owner !== messageTransmitter.toString()) {
+      throw new Error('invalid used nonce account owner')
+    }
+
+    let txHash = ''
+    try {
+      const signatures = await fetchSolanaRpc(environment, 'getSignaturesForAddress', [
+        usedNonce.toString(),
+        { limit: 1, commitment: 'confirmed' },
+      ])
+      txHash = signatures?.[0]?.err == null ? String(signatures[0].signature || '') : ''
+    } catch {
+      // The used-nonce account is authoritative; an explorer link is optional.
+    }
+    return {
+      state: 'claimed',
+      txHash,
+      explorerUrl: txHash
+        ? safeExplorerUrl(String(destination.explorerUrl || '').replace('{hash}', txHash))
+        : null,
+    }
+  } catch (error) {
+    console.warn('Could not verify Solana CCTP claim status.', error)
+    return { state: 'unknown' }
+  }
+}
+
 export async function fetchManualClaim(environment, sourceId, transactionHash) {
   const validationError = validateManualClaimBurnHash(environment, sourceId, transactionHash)
   if (validationError) throw new Error(validationError)
@@ -970,6 +1028,9 @@ export async function fetchManualClaim(environment, sourceId, transactionHash) {
     throw new Error('Circle returned invalid transfer recipient details.')
   }
   const destinationCaller = decoded.destinationCaller
+  const destinationStatus = destination.type === 'solana'
+    ? await getSolanaManualClaimStatus(environment, destination, message.eventNonce)
+    : null
   return {
     environment,
     sourceId,
@@ -983,6 +1044,7 @@ export async function fetchManualClaim(environment, sourceId, transactionHash) {
       ? String(message.forwardState).toUpperCase()
       : null,
     forwardTxHash: message.forwardTxHash || null,
+    destinationStatus,
     destinationCaller,
     mintRecipient,
     amountMicro: decoded.amount,
@@ -993,6 +1055,12 @@ export async function fetchManualClaim(environment, sourceId, transactionHash) {
 export function manualClaimBlockReason(claim, wallet, solanaRecipientOwner = '') {
   if (!claim) return 'Load a CCTP v2 burn before claiming.'
   const destination = getDefinition(claim.environment, claim.destinationId)
+  if (claim.destinationStatus?.state === 'claimed') {
+    return `This transfer was already claimed on ${destination.name}.`
+  }
+  if (claim.destinationStatus?.state === 'unknown') {
+    return `Could not verify the claim status on ${destination.name}. Check the destination RPC and try again.`
+  }
   if (claim.forwardState === 'COMPLETE') {
     return 'Circle Orbit already completed this transfer on the destination chain.'
   }
