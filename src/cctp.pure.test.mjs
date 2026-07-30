@@ -34,6 +34,7 @@ import {
   loadTransferHistory,
   normalizeRetryResult,
   reconcileAlreadyCompletedClaim,
+  repairTransferHistoryRecord,
   persistTransfer,
   supportsFastTransfer,
   supportsForwarderDestination,
@@ -755,6 +756,100 @@ describe('mainnet transfer safety invariants', () => {
       )
     } finally {
       globalThis.fetch = previousFetch
+    }
+  })
+
+  it('repairs a selected older history record without replacing the latest transfer', async () => {
+    const previousFetch = globalThis.fetch
+    const previousStorageDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+    const destination = getDefinition('mainnet', 'sonic')
+    const failedHash = `0x${'3'.repeat(64)}`
+    const records = [
+      {
+        id: 'latest',
+        environment: 'mainnet',
+        createdAt: '2026-07-30T05:32:00.000Z',
+        updatedAt: '2026-07-30T05:32:00.000Z',
+        amount: '1005',
+        sourceId: 'sonic',
+        destinationId: 'ethereum',
+        state: 'success',
+        retryable: false,
+        explorerLinks: [],
+        txHashes: ['0xlatest'],
+      },
+      {
+        id: 'older-interrupted',
+        environment: 'mainnet',
+        createdAt: '2026-07-30T04:49:00.000Z',
+        updatedAt: '2026-07-30T04:49:00.000Z',
+        amount: '10.98807',
+        sourceId: 'base',
+        destinationId: 'sonic',
+        state: 'error',
+        retryable: true,
+        explorerLinks: [],
+        txHashes: [failedHash],
+      },
+    ]
+    const entries = new Map([
+      ['relay:transfer-history:mainnet', JSON.stringify(records)],
+    ])
+
+    try {
+      Object.defineProperty(globalThis, 'localStorage', {
+        configurable: true,
+        value: {
+          getItem(key) {
+            return entries.get(key) ?? null
+          },
+          setItem(key, value) {
+            entries.set(key, String(value))
+          },
+          removeItem(key) {
+            entries.delete(key)
+          },
+        },
+      })
+      globalThis.fetch = async (_url, options) => {
+        const request = JSON.parse(options.body)
+        if (request.method === 'eth_getTransactionReceipt') {
+          return { ok: true, json: async () => ({ result: { status: '0x0' } }) }
+        }
+        if (request.method === 'eth_getTransactionByHash') {
+          return {
+            ok: true,
+            json: async () => ({
+              result: {
+                from: '0xd6fab449d7e06122e8eda3726efb2c813cecc19c',
+                to: destination.cctp.contracts.v2.messageTransmitter,
+                input: '0x57ecfd28deadbeef',
+                value: '0x0',
+              },
+            }),
+          }
+        }
+        return {
+          ok: true,
+          json: async () => ({ error: { message: 'execution reverted: Nonce already used' } }),
+        }
+      }
+
+      assert.equal(await repairTransferHistoryRecord(records[1], 'mainnet'), true)
+      const repaired = loadTransferHistory('mainnet')
+      assert.equal(repaired.length, 2)
+      assert.equal(repaired[0].id, 'latest')
+      assert.equal(repaired[0].state, 'success')
+      assert.equal(repaired[1].id, 'older-interrupted')
+      assert.equal(repaired[1].state, 'success')
+      assert.equal(repaired[1].retryable, false)
+    } finally {
+      globalThis.fetch = previousFetch
+      if (previousStorageDescriptor) {
+        Object.defineProperty(globalThis, 'localStorage', previousStorageDescriptor)
+      } else {
+        delete globalThis.localStorage
+      }
     }
   })
 

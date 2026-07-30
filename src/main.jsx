@@ -54,6 +54,7 @@ import {
   mergeBridgeEventIntoResult,
   parseUsdcToMicro,
   persistTransfer,
+  repairTransferHistoryRecord,
   quoteInputKey,
   quoteFeeBreakdown,
   resolveAmountFieldError,
@@ -1558,7 +1559,7 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
         </div>
         <div className="card-actions">
           <button type="button" className="ghost-btn" onClick={resumeLastTransfer}>
-            Resume transfer
+            Resume latest transfer
           </button>
         </div>
       </div>
@@ -1575,7 +1576,7 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
             </span>
           </div>
           <button type="button" className="ghost-btn resume-banner-action" onClick={resumeLastTransfer}>
-            Resume
+            Resume latest
           </button>
         </div>
       )}
@@ -1956,6 +1957,8 @@ function TransferHistory({ environment, chains, onResume }) {
   const [sourceFilter, setSourceFilter] = useState('all')
   const [destinationFilter, setDestinationFilter] = useState('all')
   const [timeFilter, setTimeFilter] = useState('all')
+  const [checkingId, setCheckingId] = useState(null)
+  const [checkFailedId, setCheckFailedId] = useState(null)
 
   useEffect(() => {
     const refresh = (event) => {
@@ -2012,6 +2015,14 @@ function TransferHistory({ environment, chains, onResume }) {
     setSourceFilter('all')
     setDestinationFilter('all')
     setTimeFilter('all')
+  }
+
+  async function checkHistoricalStatus(record) {
+    setCheckingId(record.id)
+    setCheckFailedId(null)
+    const repaired = await repairTransferHistoryRecord(record, environment)
+    if (!repaired) setCheckFailedId(record.id)
+    setCheckingId(null)
   }
 
   const statusOptions = [
@@ -2128,6 +2139,26 @@ function TransferHistory({ environment, chains, onResume }) {
                       Resume
                     </button>
                   )}
+                  {record.id !== records[0]?.id
+                    && record.state === 'error'
+                    && Array.isArray(record.txHashes)
+                    && record.txHashes.length > 0 && (
+                      <button
+                        type="button"
+                        className="history-action secondary"
+                        disabled={checkingId === record.id}
+                        title={checkFailedId === record.id
+                          ? 'On-chain completion was not found. The saved status was not changed.'
+                          : 'Check this transfer on-chain'}
+                        onClick={() => checkHistoricalStatus(record)}
+                      >
+                        {checkingId === record.id
+                          ? 'Checking…'
+                          : checkFailedId === record.id
+                            ? 'Not completed'
+                            : 'Check status'}
+                      </button>
+                    )}
                   <TransactionLinks links={record.explorerLinks} />
                 </span>
               </div>

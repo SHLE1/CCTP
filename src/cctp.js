@@ -525,6 +525,47 @@ function markClaimAlreadyCompleted(result, stepIndex) {
   return { ...result, state: 'success', steps }
 }
 
+async function isConsumedCctpClaim(definition, txHash) {
+  const messageTransmitter = definition.cctp?.contracts?.v2?.messageTransmitter
+  if (
+    definition.type !== 'evm'
+    || !messageTransmitter
+    || !/^0x[0-9a-f]{64}$/i.test(String(txHash || ''))
+  ) {
+    return false
+  }
+
+  try {
+    const [receipt, transaction] = await Promise.all([
+      evmJsonRpc(definition, 'eth_getTransactionReceipt', [txHash]),
+      evmJsonRpc(definition, 'eth_getTransactionByHash', [txHash]),
+    ])
+    if (
+      !receipt
+      || !transaction
+      || BigInt(receipt.status) !== 0n
+      || String(transaction.to || '').toLowerCase() !== messageTransmitter.toLowerCase()
+      || !String(transaction.input || '').toLowerCase().startsWith(CCTP_RECEIVE_MESSAGE_SELECTOR)
+    ) {
+      return false
+    }
+
+    try {
+      await evmJsonRpc(definition, 'eth_call', [{
+        from: transaction.from,
+        to: transaction.to,
+        data: transaction.input,
+        value: transaction.value || '0x0',
+      }, 'latest'])
+    } catch (error) {
+      return /nonce already used/i.test(String(error?.message || error))
+    }
+  } catch {
+    // Reconciliation is best-effort; an unavailable RPC must not invent success.
+  }
+  return false
+}
+
 /**
  * A relayer and a self-claim can race for the same CCTP message. If the later
  * receiveMessage transaction reverts because its nonce was already consumed,
@@ -551,41 +592,11 @@ export async function reconcileAlreadyCompletedClaim(result, environment) {
   const destinationId = findChainIdForDefinition(environment, result.destination?.chain)
   if (!destinationId) return result
   const definition = getDefinition(environment, destinationId)
-  const messageTransmitter = definition.cctp?.contracts?.v2?.messageTransmitter
-  if (definition.type !== 'evm' || !messageTransmitter) return result
-
-  try {
-    const [receipt, transaction] = await Promise.all([
-      evmJsonRpc(definition, 'eth_getTransactionReceipt', [step.txHash]),
-      evmJsonRpc(definition, 'eth_getTransactionByHash', [step.txHash]),
-    ])
-    if (
-      !receipt
-      || !transaction
-      || BigInt(receipt.status) !== 0n
-      || String(transaction.to || '').toLowerCase() !== messageTransmitter.toLowerCase()
-      || !String(transaction.input || '').toLowerCase().startsWith(CCTP_RECEIVE_MESSAGE_SELECTOR)
-    ) {
-      return result
-    }
-
-    try {
-      await evmJsonRpc(definition, 'eth_call', [{
-        from: transaction.from,
-        to: transaction.to,
-        data: transaction.input,
-        value: transaction.value || '0x0',
-      }, 'latest'])
-    } catch (error) {
-      if (/nonce already used/i.test(String(error?.message || error))) {
-        return markClaimAlreadyCompleted(result, stepIndex)
-      }
-    }
-  } catch {
-    // Reconciliation is best-effort; an unavailable RPC must not invent success.
-  }
-  return result
+  return await isConsumedCctpClaim(definition, step.txHash)
+    ? markClaimAlreadyCompleted(result, stepIndex)
+    : result
 }
+ 
 
 export async function fetchUsdcBalance(environment, chainId, address, provider) {
   if (!address) return null
@@ -1117,6 +1128,56 @@ export function loadTransferHistory(environment) {
     saved?.updatedAt || new Date().toISOString(),
   )
   return fallback ? [fallback] : []
+}
+
+export async function repairTransferHistoryRecord(record, environment) {
+  if (
+    !record
+    || record.environment !== environment
+    || record.state !== 'error'
+    || !Array.isArray(record.txHashes)
+  ) {
+    return false
+  }
+
+  let definition
+  try {
+    definition = getDefinition(environment, record.destinationId)
+  } catch {
+    return false
+  }
+  let completed = false
+  for (const txHash of [...record.txHashes].reverse()) {
+    if (await isConsumedCctpClaim(definition, txHash)) {
+      completed = true
+      break
+    }
+  }
+  if (!completed) return false
+
+  try {
+    const history = readTransferHistory(environment)
+    const recordIndex = history.findIndex((item) => item.id === record.id)
+    if (recordIndex < 0 || history[recordIndex].state !== 'error') return false
+    history[recordIndex] = {
+      ...history[recordIndex],
+      state: 'success',
+      retryable: false,
+      updatedAt: new Date().toISOString(),
+    }
+    localStorage.setItem(
+      transferHistoryStorageKey(environment),
+      JSON.stringify(history.slice(0, TRANSFER_HISTORY_LIMIT)),
+    )
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('relay:transfer-history-updated', {
+        detail: { environment },
+      }))
+    }
+    return true
+  } catch {
+    return false
+  }
 }
 
 export function isTransferStorageAvailable(environment) {
