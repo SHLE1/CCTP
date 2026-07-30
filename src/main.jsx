@@ -441,6 +441,8 @@ function ProgressModal({
   const quoteRefreshing = phase === 'ready' && quoteStatus === 'loading'
   const startBlocked = phase === 'ready' && !canStartTransferFromQuote(quoteStatus, quoteIsCurrent)
   const phaseIndex = PHASE_INDEX[phase] ?? 0
+  const eta = speed === 'fast' ? source.fastEta : source.eta
+  const hasLongAttestationWait = /\b(?:min|hr)\b/.test(eta)
   const totalSteps = 4
   const displayStep = phase === 'success' ? totalSteps : Math.min(phaseIndex + 1, totalSteps)
   const progressPct = phase === 'success'
@@ -598,6 +600,16 @@ function ProgressModal({
             <strong>{receive} USDC</strong>
           </div>
         )}
+        {phase === 'attest' && (
+          <div className="mode-callout" role="status">
+            <Info size={14} />
+            <span>
+              Attestation from {source.name} usually takes <strong>{eta}</strong>.
+              {hasLongAttestationWait && ' This is normal—not stuck.'}
+              {' '}Keep this tab open; minting will start automatically. Progress is saved so you can resume if something fails.
+            </span>
+          </div>
+        )}
         <ol className="steps" aria-label="Transfer steps">
           {steps.map((item, index) => {
             const complete = phase === 'success' || index < phaseIndex
@@ -642,8 +654,8 @@ function ProgressModal({
             </span>
           </div>
         )}
-        {busy && (
-          <p className="progress-hint">Do not close this tab while attestation or mint is running. Progress is saved so you can resume if something fails.</p>
+        {busy && phase !== 'attest' && (
+          <p className="progress-hint">Keep this tab open while the transfer runs. Progress is saved so you can resume if something fails.</p>
         )}
         {error && <div className="error-message"><Info size={15} /><span>{error}</span></div>}
         {warning && <div className="real-warning"><Info size={15} /><span>{warning}</span></div>}
