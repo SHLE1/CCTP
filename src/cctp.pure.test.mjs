@@ -26,8 +26,11 @@ import {
 import {
   assertSourceWalletReady,
   checkSourceGasReadiness,
+  executeManualClaim,
+  fetchManualClaim,
   createTransferDraft,
   findChainIdForDefinition,
+  findChainIdForDomain,
   getDefinition,
   isTransferStorageAvailable,
   listChainIds,
@@ -35,11 +38,13 @@ import {
   normalizeRetryResult,
   reconcileAlreadyCompletedClaim,
   repairTransferHistoryRecord,
+  manualClaimBlockReason,
   persistTransfer,
   supportsFastTransfer,
   supportsForwarderDestination,
   switchConnectedEvmWallet,
   validateRecipient,
+  validateManualClaimBurnHash,
   validateTransferEstimate,
 } from './cctp.js'
 
@@ -90,6 +95,166 @@ describe('Bridge Kit chain coverage', () => {
     assert.equal(supportsForwarderDestination('mainnet', 'linea'), true)
     assert.equal(supportsForwarderDestination('mainnet', 'cronos'), false)
     assert.equal(supportsForwarderDestination('mainnet', 'injective'), false)
+  })
+})
+
+describe('external CCTP v2 manual claim', () => {
+  const uintHex = (value, bytes) => BigInt(value).toString(16).padStart(bytes * 2, '0')
+  const bytes32 = (value = '0x') => value.replace(/^0x/i, '').padStart(64, '0')
+  const makeCctpV2Message = ({
+    sourceDomain,
+    destinationDomain,
+    eventNonce,
+    mintRecipient,
+    destinationCaller = '0x',
+    amount = '1000000',
+    expirationBlock = '0',
+  }) => `0x${[
+    uintHex(1, 4),
+    uintHex(sourceDomain, 4),
+    uintHex(destinationDomain, 4),
+    bytes32(eventNonce),
+    bytes32(),
+    bytes32(),
+    bytes32(destinationCaller),
+    uintHex(1000, 4),
+    uintHex(1000, 4),
+    uintHex(1, 4),
+    bytes32(),
+    bytes32(mintRecipient),
+    uintHex(amount, 32),
+    bytes32(),
+    uintHex(0, 32),
+    uintHex(0, 32),
+    uintHex(expirationBlock, 32),
+  ].join('')}`
+
+  it('maps Circle domains and validates source transaction identifiers', () => {
+    assert.equal(
+      findChainIdForDomain('mainnet', getDefinition('mainnet', 'sonic').cctp.domain),
+      'sonic',
+    )
+    assert.equal(findChainIdForDomain('mainnet', 'not-a-domain'), null)
+    assert.equal(
+      validateManualClaimBurnHash('mainnet', 'ethereum', `0x${'ab'.repeat(32)}`),
+      '',
+    )
+    assert.match(
+      validateManualClaimBurnHash('mainnet', 'ethereum', '0x1234'),
+      /32-byte/,
+    )
+    assert.equal(
+      validateManualClaimBurnHash('mainnet', 'solana', '1'.repeat(88)),
+      '',
+    )
+  })
+
+  it('blocks relayed or caller-restricted burns before destination signing', () => {
+    const wallet = {
+      address: '0x1111111111111111111111111111111111111111',
+      family: 'evm',
+    }
+    const claim = {
+      environment: 'mainnet',
+      destinationId: 'sonic',
+      destinationCaller: `0x${'0'.repeat(24)}${wallet.address.slice(2)}`,
+      forwardState: null,
+    }
+    assert.equal(manualClaimBlockReason(claim, null), '')
+    assert.equal(manualClaimBlockReason(claim, wallet), '')
+    assert.match(
+      manualClaimBlockReason(claim, {
+        ...wallet,
+        address: '0x2222222222222222222222222222222222222222',
+      }),
+      /another destination caller/,
+    )
+    assert.match(
+      manualClaimBlockReason({ ...claim, forwardState: 'PENDING' }, null),
+      /Orbit is already completing/,
+    )
+  })
+
+  it('loads an external burn from Circle and submits only the destination mint', async () => {
+    const ethereum = getDefinition('mainnet', 'ethereum')
+    const sonic = getDefinition('mainnet', 'sonic')
+    const walletAddress = '0x1111111111111111111111111111111111111111'
+    const transactionHash = `0x${'ab'.repeat(32)}`
+    const originalFetch = globalThis.fetch
+    let preparedAction
+    let fetchCalls = 0
+    const eventNonce = `0x${'cd'.repeat(32)}`
+    const rawMessage = makeCctpV2Message({
+      sourceDomain: ethereum.cctp.domain,
+      destinationDomain: sonic.cctp.domain,
+      eventNonce,
+      mintRecipient: walletAddress,
+    })
+    globalThis.fetch = async (url) => {
+      fetchCalls += 1
+      assert.match(String(url), new RegExp(`/v2/messages/${ethereum.cctp.domain}`))
+      assert.match(String(url), /transactionHash=/)
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            messages: [{
+              cctpVersion: 2,
+              status: 'complete',
+              message: rawMessage,
+              attestation: '0x34',
+              eventNonce,
+              decodedMessage: {
+                sourceDomain: String(ethereum.cctp.domain),
+                destinationDomain: String(sonic.cctp.domain),
+                destinationCaller: `0x${'00'.repeat(32)}`,
+                decodedMessageBody: {
+                  mintRecipient: '0x2222222222222222222222222222222222222222',
+                  amount: '999',
+                  expirationBlock: '999',
+                },
+              },
+            }],
+          }
+        },
+      }
+    }
+    try {
+      const claim = await fetchManualClaim('mainnet', 'ethereum', transactionHash)
+      assert.equal(claim.destinationId, 'sonic')
+      assert.equal(claim.amountMicro, '1000000')
+
+      const wallet = {
+        address: walletAddress,
+        family: 'evm',
+        provider: {
+          async request({ method }) {
+            if (method === 'eth_accounts') return [walletAddress]
+            if (method === 'eth_chainId') return `0x${sonic.chainId.toString(16)}`
+            if (method === 'eth_blockNumber') return '0x1'
+            throw new Error(`unexpected method: ${method}`)
+          },
+        },
+        adapter: {
+          async prepareAction(action, params, context) {
+            preparedAction = { action, params, context }
+            return { async execute() { return `0x${'ef'.repeat(32)}` } }
+          },
+          async waitForTransaction() {
+            return { status: 'confirmed' }
+          },
+        },
+      }
+      const result = await executeManualClaim(claim, wallet)
+      assert.equal(preparedAction.action, 'cctp.v2.receiveMessage')
+      assert.equal(preparedAction.params.message, rawMessage)
+      assert.equal(preparedAction.params.destinationAddress, walletAddress)
+      assert.match(result.txHash, /^0xef/)
+      assert.equal(fetchCalls, 2)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
   })
 })
 

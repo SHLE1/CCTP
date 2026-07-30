@@ -37,11 +37,14 @@ import {
   createTransferDraft,
   estimateTransfer,
   executeTransfer,
+  executeManualClaim,
   failQuoteRefresh,
   fetchUsdcBalance,
+  fetchManualClaim,
   findChainIdForDefinition,
   friendlyError,
   getDefinition,
+  formatUsdcFromMicro,
   getSolanaRpcEndpoint,
   isAmountGreaterThanFee,
   isDestinationWalletCompatibleWithResult,
@@ -52,6 +55,7 @@ import {
   loadTransferHistory,
   loadPersistedTransfer,
   mergeBridgeEventIntoResult,
+  manualClaimBlockReason,
   parseUsdcToMicro,
   persistTransfer,
   repairTransferHistoryRecord,
@@ -70,6 +74,7 @@ import {
   switchConnectedEvmWallet,
   usesPublicSolanaRpc,
   validateAmount,
+  validateManualClaimBurnHash,
   validateRecipient,
   validateTransferEstimate,
 } from './cctp'
@@ -400,6 +405,268 @@ function WalletModal({ chain, environment, onClose, onConnected }) {
   )
 }
 
+function ManualClaimModal({
+  environment,
+  chains,
+  initialSourceId,
+  onClose,
+}) {
+  const [sourceId, setSourceId] = useState(initialSourceId)
+  const [transactionHash, setTransactionHash] = useState('')
+  const [phase, setPhase] = useState('input')
+  const [claim, setClaim] = useState(null)
+  const [claimWallet, setClaimWallet] = useState(null)
+  const [solanaRecipientOwner, setSolanaRecipientOwner] = useState('')
+  const [walletModalOpen, setWalletModalOpen] = useState(false)
+  const [error, setError] = useState('')
+  const [result, setResult] = useState(null)
+  const busy = phase === 'searching' || phase === 'claiming'
+  const source = findChain(chains, sourceId)
+  const destination = claim ? findChain(chains, claim.destinationId) : null
+  const hashError = validateManualClaimBurnHash(environment, sourceId, transactionHash)
+  const rpcBlocked = destination?.id === 'solana' && usesPublicSolanaRpc(environment)
+  const blockReason = claim
+    ? (
+        rpcBlocked
+          ? 'This build needs a dedicated Solana RPC before it can submit a Solana claim.'
+          : manualClaimBlockReason(claim, claimWallet, solanaRecipientOwner)
+      )
+    : ''
+  const amount = claim ? formatUsdcFromMicro(BigInt(claim.amountMicro)) : ''
+  useEscapeToClose(true, onClose, !busy && !walletModalOpen)
+
+  function resetClaim(nextSourceId = sourceId, nextHash = transactionHash) {
+    setSourceId(nextSourceId)
+    setTransactionHash(nextHash)
+    setClaim(null)
+    setClaimWallet(null)
+    setSolanaRecipientOwner('')
+    setResult(null)
+    setError('')
+    setPhase('input')
+  }
+
+  async function findTransfer() {
+    if (hashError) {
+      setError(transactionHash ? '' : hashError)
+      return
+    }
+    setPhase('searching')
+    setError('')
+    try {
+      const nextClaim = await fetchManualClaim(environment, sourceId, transactionHash)
+      setClaim(nextClaim)
+      setResult(null)
+      setPhase('ready')
+    } catch (nextError) {
+      setError(friendlyError(nextError))
+      setPhase('input')
+    }
+  }
+
+  async function claimTransfer() {
+    if (!claim || !claimWallet || blockReason) return
+    setPhase('claiming')
+    setError('')
+    try {
+      const nextResult = await executeManualClaim(
+        claim,
+        claimWallet,
+        solanaRecipientOwner,
+      )
+      setResult(nextResult)
+      setPhase('success')
+    } catch (nextError) {
+      setError(friendlyError(nextError))
+      setPhase('ready')
+    }
+  }
+
+  function primaryAction() {
+    if (!claim) return findTransfer()
+    if (!claimWallet) {
+      setWalletModalOpen(true)
+      return undefined
+    }
+    return claimTransfer()
+  }
+
+  const primaryLabel = phase === 'searching'
+    ? 'Checking Circle…'
+    : phase === 'claiming'
+      ? 'Claiming on destination…'
+      : phase === 'success'
+        ? 'Claim complete'
+        : !claim
+          ? 'Find transfer'
+          : blockReason
+            ? 'Manual claim unavailable'
+            : !claimWallet
+              ? `Connect ${destination.name} wallet`
+              : 'Claim USDC'
+
+  return (
+    <div className="modal-layer" role="dialog" aria-modal="true" aria-labelledby="manual-claim-title">
+      <button className="modal-backdrop" onClick={onClose} aria-label="Close manual claim" disabled={busy} />
+      <div className="sheet manual-claim-sheet">
+        <div className="sheet-head">
+          <div className="sheet-head-copy">
+            <h3 id="manual-claim-title">Manual claim</h3>
+            <p className="step-status-label">
+              Finish a CCTP v2 burn started in another app.
+            </p>
+          </div>
+          <button className="icon-button" onClick={onClose} aria-label="Close" disabled={busy}>
+            <X size={18} />
+          </button>
+        </div>
+
+        {!claim && (
+          <>
+            <ChainSelect
+              chains={chains}
+              label="Burn source chain"
+              value={sourceId}
+              otherValue=""
+              onChange={(value) => resetClaim(value, transactionHash)}
+            />
+            <div className="recipient-panel manual-claim-hash">
+              <span className="field-label" id="manual-claim-hash-label">Burn transaction hash</span>
+              <input
+                value={transactionHash}
+                onChange={(event) => resetClaim(sourceId, event.target.value.trim())}
+                placeholder={source.family === 'evm' ? '0x…' : 'Solana signature…'}
+                aria-labelledby="manual-claim-hash-label"
+                aria-invalid={Boolean(transactionHash && hashError) || undefined}
+                spellCheck="false"
+                disabled={busy}
+              />
+              {transactionHash && hashError && <small className="field-error">{hashError}</small>}
+            </div>
+            <div className="mode-callout" role="note">
+              <Info size={14} />
+              <span>
+                Use the source-chain burn transaction, not an approval or destination transaction.
+                The encoded recipient cannot be changed.
+              </span>
+            </div>
+          </>
+        )}
+
+        {claim && destination && (
+          <>
+            <div className="route-summary manual-claim-route">
+              <ChainMark chain={source} />
+              <span className="route-line" />
+              <ChainMark chain={destination} />
+              <strong>{amount} USDC</strong>
+            </div>
+            <div className="confirm-details manual-claim-details">
+              <span>Burn transaction</span>
+              <code>{shortAddress(claim.transactionHash)}</code>
+              <span>Destination</span>
+              <strong>{destination.name}</strong>
+              <span>Mint recipient</span>
+              <code>{shortAddress(claim.mintRecipient)}</code>
+              <span>Destination gas</span>
+              <strong>Paid by claim wallet</strong>
+            </div>
+            {destination.family === 'solana' && (
+              <div className="recipient-panel">
+                <span className="field-label" id="manual-claim-recipient-label">
+                  Solana recipient wallet
+                </span>
+                <input
+                  value={solanaRecipientOwner}
+                  onChange={(event) => setSolanaRecipientOwner(event.target.value.trim())}
+                  placeholder="Recipient wallet that owns the encoded USDC account"
+                  aria-labelledby="manual-claim-recipient-label"
+                  spellCheck="false"
+                  disabled={busy}
+                />
+              </div>
+            )}
+            {claimWallet && (
+              <div className="connected-row">
+                <span><Wallet size={14} />Claim · {shortAddress(claimWallet.address)}</span>
+                <button
+                  type="button"
+                  onClick={() => setWalletModalOpen(true)}
+                  disabled={busy}
+                >
+                  Change
+                </button>
+              </div>
+            )}
+            {blockReason && (
+              <div className="error-message" role="alert">
+                <Info size={14} />
+                <span>{blockReason}</span>
+              </div>
+            )}
+            {!blockReason && phase !== 'success' && (
+              <div className="mode-callout" role="note">
+                <Info size={14} />
+                <span>
+                  Claiming only submits the destination mint. USDC goes to the recipient encoded
+                  in the burn; the connected wallet only pays destination gas.
+                </span>
+              </div>
+            )}
+          </>
+        )}
+
+        {phase === 'success' && result && (
+          <div className="mode-callout manual-claim-success" role="status">
+            <CircleCheck size={16} />
+            <span>
+              <strong>USDC claimed on {destination.name}.</strong>
+              {result.explorerUrl && (
+                <> <a href={result.explorerUrl} target="_blank" rel="noreferrer">View transaction <ExternalLink size={12} /></a></>
+              )}
+            </span>
+          </div>
+        )}
+        {error && <div className="error-message" role="alert"><Info size={14} /><span>{error}</span></div>}
+
+        <button
+          type="button"
+          className="primary-button"
+          onClick={primaryAction}
+          disabled={busy || phase === 'success' || Boolean(claim && blockReason)}
+        >
+          {busy && <LoaderCircle className="spin" size={16} />}
+          {primaryLabel}
+        </button>
+        {claim && phase !== 'success' && !busy && (
+          <button
+            type="button"
+            className="manual-claim-reset"
+            onClick={() => resetClaim(sourceId, '')}
+          >
+            Use another burn transaction
+          </button>
+        )}
+
+        {walletModalOpen && destination && (
+          <WalletModal
+            chain={destination}
+            environment={environment}
+            onClose={() => setWalletModalOpen(false)}
+            onConnected={(connected) => {
+              setClaimWallet(connected)
+              if (destination.family === 'solana' && !solanaRecipientOwner) {
+                setSolanaRecipientOwner(connected.address)
+              }
+              setWalletModalOpen(false)
+            }}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
 const PHASE_INDEX = { ready: 0, approve: 0, burn: 1, attest: 2, mint: 3, success: 4 }
 
 const PHASE_HEADING = {
@@ -698,6 +965,7 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
     quotedAt: 0,
   })
   const [walletModal, setWalletModal] = useState(null)
+  const [manualClaimOpen, setManualClaimOpen] = useState(false)
   const [transfer, setTransfer] = useState({
     open: false,
     phase: 'ready',
@@ -1558,6 +1826,9 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
           </div>
         </div>
         <div className="card-actions">
+          <button type="button" className="ghost-btn" onClick={() => setManualClaimOpen(true)}>
+            Manual claim
+          </button>
           <button type="button" className="ghost-btn" onClick={resumeLastTransfer}>
             Resume latest transfer
           </button>
@@ -1834,6 +2105,14 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
             else setWallet(connected)
             setWalletModal(null)
           }}
+        />
+      )}
+      {manualClaimOpen && (
+        <ManualClaimModal
+          environment={environment}
+          chains={chains}
+          initialSourceId={sourceId}
+          onClose={() => setManualClaimOpen(false)}
         />
       )}
       {transfer.open && (
