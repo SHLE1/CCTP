@@ -1533,6 +1533,11 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
             <p className="card-sub">Native USDC across chains via Circle CCTP · Mainnet</p>
           </div>
         </div>
+        <div className="card-actions">
+          <button type="button" className="ghost-btn" onClick={resumeLastTransfer}>
+            Resume transfer
+          </button>
+        </div>
       </div>
 
       {incompleteNotice && (
