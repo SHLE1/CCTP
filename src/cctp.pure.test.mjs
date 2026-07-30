@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import { PublicKey } from '@solana/web3.js'
 import {
   beginQuoteRefresh,
   canStartTransferFromQuote,
@@ -173,6 +174,85 @@ describe('external CCTP v2 manual claim', () => {
       manualClaimBlockReason({ ...claim, forwardState: 'PENDING' }, null),
       /Orbit is already completing/,
     )
+  })
+
+  it('reports a consumed Solana nonce as already claimed', async () => {
+    const sonic = getDefinition('mainnet', 'sonic')
+    const solana = getDefinition('mainnet', 'solana')
+    const transactionHash = `0x${'9d'.repeat(32)}`
+    const eventNonce = `0x${'d2'.repeat(32)}`
+    const recipient = new PublicKey('ChPnWjj947MDzFF3o3kcJPZVh9wdNuvnZeJkz8h69F15')
+    const recipientHex = `0x${Buffer.from(recipient.toBytes()).toString('hex')}`
+    const rawMessage = makeCctpV2Message({
+      sourceDomain: sonic.cctp.domain,
+      destinationDomain: solana.cctp.domain,
+      eventNonce,
+      mintRecipient: recipientHex,
+      amount: '2203274043',
+    })
+    const claimTx = '5KqirXvuH99VEFxBEiUt5s7tYswSrrxkycjeiYKKFCPYMku9uZo3fJUK1LYGKuMVCeDpFrh99X1665P2ZkeZS8B8'
+    const originalFetch = globalThis.fetch
+    const rpcMethods = []
+    globalThis.fetch = async (url, options = {}) => {
+      if (String(url).includes('/v2/messages/')) {
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return {
+              messages: [{
+                cctpVersion: 2,
+                status: 'complete',
+                message: rawMessage,
+                attestation: '0x34',
+                eventNonce,
+              }],
+            }
+          },
+        }
+      }
+      const request = JSON.parse(options.body)
+      rpcMethods.push(request.method)
+      if (request.method === 'getAccountInfo') {
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return {
+              jsonrpc: '2.0',
+              result: {
+                value: {
+                  owner: solana.cctp.contracts.v2.messageTransmitter,
+                  data: ['', 'base64'],
+                },
+              },
+            }
+          },
+        }
+      }
+      assert.equal(request.method, 'getSignaturesForAddress')
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            jsonrpc: '2.0',
+            result: [{ signature: claimTx, err: null }],
+          }
+        },
+      }
+    }
+    try {
+      const claim = await fetchManualClaim('mainnet', 'sonic', transactionHash)
+      assert.equal(claim.destinationId, 'solana')
+      assert.equal(claim.destinationStatus.state, 'claimed')
+      assert.equal(claim.destinationStatus.txHash, claimTx)
+      assert.match(claim.destinationStatus.explorerUrl, new RegExp(claimTx))
+      assert.deepEqual(rpcMethods, ['getAccountInfo', 'getSignaturesForAddress'])
+      assert.match(manualClaimBlockReason(claim, null), /already claimed on Solana/)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
   })
 
   it('loads an external burn from Circle and submits only the destination mint', async () => {
