@@ -154,6 +154,13 @@ const kit = new BridgeKit({ disableErrorReporting: true })
 const EVM_ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 const SOLANA_TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA')
 const SOLANA_ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
+const IRIS_API = {
+  mainnet: 'https://iris-api.circle.com',
+  testnet: 'https://iris-api-sandbox.circle.com',
+}
+const MANUAL_CLAIM_REATTEST_ATTEMPTS = 30
+const MANUAL_CLAIM_REATTEST_DELAY_MS = 2_000
+const L1_EXPIRATION_DESTINATIONS = new Set(['arbitrum', 'edge', 'plume'])
 // Circle marks Fast Transfer available only where it materially improves
 // attestation time. Polygon is one example where Bridge Kit exposes a lower
 // fastConfirmations value but the public capability matrix still marks Fast N/A.
@@ -198,6 +205,16 @@ export function findChainIdForDefinition(environment, chain) {
     }
     return chain.chain === definition.chain
   })
+  return match?.[0] || null
+}
+
+export function findChainIdForDomain(environment, domain) {
+  assertEnvironment(environment)
+  const numericDomain = Number(domain)
+  if (!Number.isInteger(numericDomain) || numericDomain < 0) return null
+  const match = Object.entries(DEFINITIONS[environment]).find(
+    ([, definition]) => Number(definition.cctp?.domain) === numericDomain,
+  )
   return match?.[0] || null
 }
 
@@ -780,6 +797,321 @@ export async function checkDestinationReadiness(environment, chainId, address, u
     }
   }
   return { ready: true, ata: ata.toString() }
+}
+
+function deriveSolanaUsdcAta(definition, ownerAddress) {
+  const owner = new PublicKey(ownerAddress.trim())
+  const mint = new PublicKey(definition.usdcAddress)
+  const [ata] = PublicKey.findProgramAddressSync(
+    [owner.toBuffer(), SOLANA_TOKEN_PROGRAM_ID.toBuffer(), mint.toBuffer()],
+    SOLANA_ASSOCIATED_TOKEN_PROGRAM_ID,
+  )
+  return ata.toString()
+}
+
+function normalizeDecodedAddress(value, definition) {
+  const address = String(value || '').trim()
+  if (definition.type === 'evm') {
+    const match = address.match(/^0x(?:0{24})?([0-9a-fA-F]{40})$/)
+    return match ? `0x${match[1]}` : address
+  }
+  if (/^0x[0-9a-fA-F]{64}$/.test(address)) {
+    return new PublicKey(Uint8Array.from(
+      address.slice(2).match(/.{2}/g).map((byte) => Number.parseInt(byte, 16)),
+    )).toString()
+  }
+  return address
+}
+
+function isZeroDestinationCaller(value) {
+  return /^0x0+$/i.test(String(value || '').trim())
+}
+
+function destinationCallerMatches(value, walletAddress, definition) {
+  const caller = String(value || '').trim()
+  if (isZeroDestinationCaller(caller)) return true
+  if (definition.type === 'evm') {
+    if (!isAddress(walletAddress || '')) return false
+    const callerHex = caller.replace(/^0x/i, '').toLowerCase()
+    return /^[0-9a-f]{40,64}$/.test(callerHex)
+      && callerHex.slice(-40) === walletAddress.slice(2).toLowerCase()
+  }
+  if (caller === walletAddress) return true
+  if (!/^0x[0-9a-fA-F]{64}$/.test(caller)) return false
+  try {
+    const walletHex = Array.from(new PublicKey(walletAddress).toBytes())
+      .map((byte) => byte.toString(16).padStart(2, '0'))
+      .join('')
+    return caller.slice(2).toLowerCase() === walletHex
+  } catch {
+    return false
+  }
+}
+
+function decodeCctpV2Message(value) {
+  const hex = String(value || '').replace(/^0x/i, '')
+  const minimumBytes = 376
+  if (!/^[0-9a-fA-F]+$/.test(hex) || hex.length < minimumBytes * 2 || hex.length % 2 !== 0) {
+    throw new Error('invalid CCTP v2 message bytes')
+  }
+  const bytes = (offset, length) => `0x${hex.slice(offset * 2, (offset + length) * 2)}`
+  const uint = (offset, length) => BigInt(bytes(offset, length))
+  if (uint(0, 4) !== 1n || uint(148, 4) !== 1n) {
+    throw new Error('unsupported CCTP v2 message version')
+  }
+  return {
+    sourceDomain: Number(uint(4, 4)),
+    destinationDomain: Number(uint(8, 4)),
+    eventNonce: bytes(12, 32),
+    destinationCaller: bytes(108, 32),
+    mintRecipient: bytes(184, 32),
+    amount: uint(216, 32).toString(),
+    expirationBlock: uint(344, 32).toString(),
+  }
+}
+
+export function validateManualClaimBurnHash(environment, sourceId, value) {
+  const definition = getDefinition(environment, sourceId)
+  const hash = String(value || '').trim()
+  if (!hash) return 'Enter the source burn transaction hash.'
+  if (definition.type === 'evm') {
+    return /^0x[0-9a-fA-F]{64}$/.test(hash)
+      ? ''
+      : 'Enter a 32-byte EVM transaction hash beginning with 0x.'
+  }
+  return /^[1-9A-HJ-NP-Za-km-z]{64,100}$/.test(hash)
+    ? ''
+    : 'Enter a valid Solana transaction signature.'
+}
+
+function manualClaimUrl(environment, sourceDomain, transactionHash) {
+  const url = new URL(`${IRIS_API[environment]}/v2/messages/${sourceDomain}`)
+  url.searchParams.set('transactionHash', transactionHash)
+  return url.toString()
+}
+
+async function fetchManualClaimResponse(environment, sourceDomain, transactionHash) {
+  const response = await fetch(manualClaimUrl(environment, sourceDomain, transactionHash), {
+    headers: { accept: 'application/json' },
+  })
+  if (!response.ok) {
+    throw new Error(
+      response.status === 404
+        ? 'Circle did not find a CCTP v2 burn for this transaction on the selected source chain.'
+        : `Circle attestation service returned HTTP ${response.status}. Try again.`,
+    )
+  }
+  const payload = await response.json()
+  const message = payload?.messages?.[0]
+  if (!message) {
+    throw new Error('Circle did not find a CCTP v2 message in this source transaction.')
+  }
+  if (payload.messages.length !== 1) {
+    throw new Error(
+      'This transaction contains multiple CCTP messages. Manual claim currently requires a single-message burn.',
+    )
+  }
+  return message
+}
+
+export async function fetchManualClaim(environment, sourceId, transactionHash) {
+  const validationError = validateManualClaimBurnHash(environment, sourceId, transactionHash)
+  if (validationError) throw new Error(validationError)
+  const normalizedTransactionHash = String(transactionHash || '').trim()
+  const source = getDefinition(environment, sourceId)
+  const message = await fetchManualClaimResponse(
+    environment,
+    source.cctp.domain,
+    normalizedTransactionHash,
+  )
+  if (Number(message.cctpVersion) !== 2) {
+    throw new Error('This transaction is not a CCTP v2 burn on the selected source chain.')
+  }
+  if (String(message.status || '').toLowerCase() !== 'complete') {
+    const reason = String(message.delayReason || '').trim()
+    throw new Error(
+      `Circle attestation is not ready yet${reason ? `: ${reason}` : '.'} Try again after source finality.`,
+    )
+  }
+  if (
+    !/^0x(?:[0-9a-fA-F]{2})+$/.test(String(message.message || ''))
+    || !/^0x(?:[0-9a-fA-F]{2})+$/.test(String(message.attestation || ''))
+    || !/^0x[0-9a-fA-F]{64}$/.test(String(message.eventNonce || ''))
+  ) {
+    throw new Error('Circle returned an invalid message or attestation for this transaction.')
+  }
+  let decoded
+  try {
+    decoded = decodeCctpV2Message(message.message)
+  } catch {
+    throw new Error('Circle returned invalid CCTP v2 message bytes.')
+  }
+  const destinationId = findChainIdForDomain(environment, decoded.destinationDomain)
+  if (
+    decoded.sourceDomain !== Number(source.cctp.domain)
+    || !destinationId
+    || destinationId === sourceId
+  ) {
+    throw new Error('The attested message has an invalid source or destination chain.')
+  }
+  if (decoded.eventNonce.toLowerCase() !== String(message.eventNonce).toLowerCase()) {
+    throw new Error('Circle returned a nonce that does not match the attested message.')
+  }
+  const destination = getDefinition(environment, destinationId)
+  let mintRecipient
+  try {
+    mintRecipient = normalizeDecodedAddress(decoded.mintRecipient, destination)
+    if (destination.type === 'evm') {
+      if (!isAddress(mintRecipient)) throw new Error('invalid EVM recipient')
+    } else {
+      new PublicKey(mintRecipient)
+    }
+  } catch {
+    throw new Error('Circle returned invalid transfer recipient details.')
+  }
+  const destinationCaller = decoded.destinationCaller
+  return {
+    environment,
+    sourceId,
+    destinationId,
+    transactionHash: normalizedTransactionHash,
+    message: message.message,
+    attestation: message.attestation,
+    eventNonce: message.eventNonce,
+    cctpVersion: 2,
+    forwardState: message.forwardState
+      ? String(message.forwardState).toUpperCase()
+      : null,
+    forwardTxHash: message.forwardTxHash || null,
+    destinationCaller,
+    mintRecipient,
+    amountMicro: decoded.amount,
+    expirationBlock: decoded.expirationBlock,
+  }
+}
+
+export function manualClaimBlockReason(claim, wallet, solanaRecipientOwner = '') {
+  if (!claim) return 'Load a CCTP v2 burn before claiming.'
+  const destination = getDefinition(claim.environment, claim.destinationId)
+  if (claim.forwardState === 'COMPLETE') {
+    return 'Circle Orbit already completed this transfer on the destination chain.'
+  }
+  if (claim.forwardState === 'PENDING' || claim.forwardState === 'CONFIRMED') {
+    return 'Circle Orbit is already completing this transfer. Wait for the relayer instead of submitting a duplicate mint.'
+  }
+  if (!wallet?.address) return ''
+  if (wallet.family !== (destination.type === 'evm' ? 'evm' : 'solana')) {
+    return `Connect a ${destination.name} wallet to pay destination gas.`
+  }
+  if (!destinationCallerMatches(claim.destinationCaller, wallet.address, destination)) {
+    return 'This burn restricts minting to another destination caller. Continue in the app that created the transfer.'
+  }
+  if (destination.type === 'solana') {
+    try {
+      const owner = solanaRecipientOwner.trim()
+      if (!owner || deriveSolanaUsdcAta(destination, owner) !== claim.mintRecipient) {
+        return 'Enter the Solana recipient wallet whose USDC token account is encoded in this burn.'
+      }
+    } catch {
+      return 'Enter a valid Solana recipient wallet address.'
+    }
+  }
+  return ''
+}
+
+async function currentDestinationBlock(environment, destinationId, wallet) {
+  const destination = getDefinition(environment, destinationId)
+  if (L1_EXPIRATION_DESTINATIONS.has(destinationId)) {
+    return BigInt(await evmJsonRpc(
+      getDefinition(environment, 'ethereum'),
+      'eth_blockNumber',
+      [],
+    ))
+  }
+  if (destination.type === 'evm') {
+    return BigInt(await wallet.provider.request({ method: 'eth_blockNumber' }))
+  }
+  const connection = new Connection(getSolanaRpcEndpoint(environment), 'confirmed')
+  return BigInt(await connection.getSlot('confirmed'))
+}
+
+async function refreshExpiredManualClaim(claim) {
+  const response = await fetch(
+    `${IRIS_API[claim.environment]}/v2/reattest/${encodeURIComponent(claim.eventNonce)}`,
+    { method: 'POST', headers: { accept: 'application/json' } },
+  )
+  if (!response.ok) {
+    throw new Error(`Circle could not refresh the expired attestation (HTTP ${response.status}).`)
+  }
+  let lastError
+  for (let attempt = 0; attempt < MANUAL_CLAIM_REATTEST_ATTEMPTS; attempt += 1) {
+    if (attempt > 0) {
+      await new Promise((resolve) => window.setTimeout(resolve, MANUAL_CLAIM_REATTEST_DELAY_MS))
+    }
+    try {
+      const refreshed = await fetchManualClaim(
+        claim.environment,
+        claim.sourceId,
+        claim.transactionHash,
+      )
+      if (refreshed.expirationBlock === '0') return refreshed
+    } catch (error) {
+      lastError = error
+    }
+  }
+  throw new Error(
+    lastError?.message || 'Circle accepted re-attestation, but the refreshed attestation is not ready yet.',
+  )
+}
+
+export async function executeManualClaim(claim, destinationWallet, solanaRecipientOwner = '') {
+  const refreshedClaim = await fetchManualClaim(
+    claim.environment,
+    claim.sourceId,
+    claim.transactionHash,
+  )
+  const destination = getDefinition(refreshedClaim.environment, refreshedClaim.destinationId)
+  const blockReason = manualClaimBlockReason(
+    refreshedClaim,
+    destinationWallet,
+    solanaRecipientOwner,
+  )
+  if (blockReason) throw new Error(blockReason)
+  await assertSourceWalletReady(
+    refreshedClaim.environment,
+    refreshedClaim.destinationId,
+    destinationWallet,
+    'destination',
+  )
+  const currentBlock = await currentDestinationBlock(
+    refreshedClaim.environment,
+    refreshedClaim.destinationId,
+    destinationWallet,
+  )
+  const activeClaim = BigInt(refreshedClaim.expirationBlock) > 0n
+    && currentBlock >= BigInt(refreshedClaim.expirationBlock)
+    ? await refreshExpiredManualClaim(refreshedClaim)
+    : refreshedClaim
+  const prepared = await destinationWallet.adapter.prepareAction(
+    'cctp.v2.receiveMessage',
+    {
+      fromChain: getDefinition(refreshedClaim.environment, refreshedClaim.sourceId),
+      toChain: destination,
+      message: activeClaim.message,
+      attestation: activeClaim.attestation,
+      eventNonce: activeClaim.eventNonce,
+      destinationAddress: destination.type === 'solana'
+        ? solanaRecipientOwner.trim()
+        : activeClaim.mintRecipient,
+    },
+    { chain: destination, address: destinationWallet.address },
+  )
+  const txHash = await prepared.execute()
+  await destinationWallet.adapter.waitForTransaction(txHash, undefined, destination)
+  const explorerUrl = safeExplorerUrl(
+    String(destination.explorerUrl || '').replace('{hash}', txHash),
+  )
+  return { txHash, explorerUrl }
 }
 
 function addressesMatch(left, right, family) {

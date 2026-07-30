@@ -385,8 +385,8 @@ main {
 
 .card-actions {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  flex-direction: row;
+  align-items: center;
   gap: 8px;
   flex-shrink: 0;
 }
@@ -1999,6 +1999,43 @@ summary:focus-visible,
   box-shadow: var(--shadow);
   color: var(--text);
 }
+.manual-claim-sheet {
+  width: min(520px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.manual-claim-sheet .chain-field { margin-bottom: 16px; }
+.manual-claim-hash { margin-bottom: 12px; }
+.manual-claim-route { margin-bottom: 12px; }
+.manual-claim-details { margin: 0 0 14px; }
+.manual-claim-success {
+  border-color: color-mix(in srgb, var(--green) 35%, var(--border));
+  color: var(--text);
+}
+.manual-claim-success > svg { color: var(--green); }
+.manual-claim-success > span {
+  display: grid;
+  gap: 4px;
+}
+.manual-claim-success a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--pill-fg);
+  font-weight: 700;
+}
+.manual-claim-reset {
+  width: 100%;
+  min-height: 36px;
+  margin-top: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+.manual-claim-reset:hover { color: var(--text); }
 .sheet-head {
   display: flex;
   justify-content: space-between;

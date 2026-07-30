@@ -66,6 +66,19 @@ Forwarder retries call `kit.retry(result, { from: sourceAdapter, to: undefined }
 Self-claim retries require both the original source adapter and the original destination
 claim adapter.
 
+### External manual claim
+
+**Manual claim** can finish a CCTP V2 burn started in another app or browser.
+Select the burn's source chain and paste its source transaction hash/signature.
+The app reads Circle's attested message, derives the destination chain and fixed
+mint recipient, then asks a destination-chain wallet to submit only the mint.
+
+Burns with an active Circle Orbit forward, or a `destinationCaller` restricted
+to another relayer, cannot be manually claimed here. Fast Transfer attestations
+are re-attested after expiry. Solana destinations additionally require
+`VITE_SOLANA_MAINNET_RPC` and the recipient wallet whose USDC ATA is encoded in
+the burn; the connected claim wallet pays SOL and can create that ATA.
+
 ## Production warning
 
 This app can move **real USDC** and spend real gas. Before relying on this as a public fallback service, add durable off-device transaction storage, multi-RPC failover, analytics/monitoring, compliance controls, broader end-to-end tests, and an independent smart-contract/frontend security review.
