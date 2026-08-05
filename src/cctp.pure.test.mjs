@@ -255,6 +255,133 @@ describe('external CCTP v2 manual claim', () => {
     }
   })
 
+  it('reconciles a relayed EVM mint when only the burn was saved locally', async () => {
+    const sonic = getDefinition('mainnet', 'sonic')
+    const monad = getDefinition('mainnet', 'monad')
+    const transactionHash = `0x${'9e'.repeat(32)}`
+    const eventNonce = `0x${'d3'.repeat(32)}`
+    const recipient = '0xdc9275dcf0233207fae8bcbbba7033132a748811'
+    const rawMessage = makeCctpV2Message({
+      sourceDomain: sonic.cctp.domain,
+      destinationDomain: monad.cctp.domain,
+      eventNonce,
+      mintRecipient: recipient,
+      amount: '8000332811',
+    })
+    const result = {
+      ...createTransferDraft({
+        environment: 'mainnet',
+        sourceId: 'sonic',
+        destinationId: 'monad',
+        amount: '8000.332811',
+        recipient,
+        destinationWalletAddress: recipient,
+        speed: 'standard',
+        maxFee: '0',
+        useForwarder: false,
+      }, recipient),
+      state: 'pending',
+      steps: [{ name: 'burn', state: 'success', txHash: transactionHash }],
+    }
+    const originalFetch = globalThis.fetch
+
+    try {
+      globalThis.fetch = async (url, options = {}) => {
+        if (String(url).includes('/v2/messages/')) {
+          return {
+            ok: true,
+            status: 200,
+            async json() {
+              return {
+                messages: [{
+                  cctpVersion: 2,
+                  status: 'complete',
+                  message: rawMessage,
+                  attestation: '0x34',
+                  eventNonce,
+                }],
+              }
+            },
+          }
+        }
+        const request = JSON.parse(options.body)
+        assert.equal(request.method, 'eth_call')
+        assert.equal(request.params[0].to.toLowerCase(), monad.cctp.contracts.v2.messageTransmitter.toLowerCase())
+        return {
+          ok: true,
+          async json() {
+            return {
+              error: { message: 'execution reverted: Nonce already used' },
+            }
+          },
+        }
+      }
+
+      const reconciled = await reconcileAlreadyCompletedClaim(result, 'mainnet')
+      assert.equal(reconciled.state, 'success')
+      assert.equal(reconciled.steps.at(-1).name, 'mint')
+      assert.equal(reconciled.steps.at(-1).state, 'noop')
+      assert.equal(reconciled.steps.at(-1).errorMessage, 'Claim was already completed on-chain.')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('reports a consumed EVM nonce as already claimed in Manual claim', async () => {
+    const sonic = getDefinition('mainnet', 'sonic')
+    const monad = getDefinition('mainnet', 'monad')
+    const transactionHash = `0x${'9f'.repeat(32)}`
+    const eventNonce = `0x${'d4'.repeat(32)}`
+    const recipient = '0xdc9275dcf0233207fae8bcbbba7033132a748811'
+    const rawMessage = makeCctpV2Message({
+      sourceDomain: sonic.cctp.domain,
+      destinationDomain: monad.cctp.domain,
+      eventNonce,
+      mintRecipient: recipient,
+      amount: '8000332811',
+    })
+    const originalFetch = globalThis.fetch
+
+    try {
+      globalThis.fetch = async (url, options = {}) => {
+        if (String(url).includes('/v2/messages/')) {
+          return {
+            ok: true,
+            status: 200,
+            async json() {
+              return {
+                messages: [{
+                  cctpVersion: 2,
+                  status: 'complete',
+                  message: rawMessage,
+                  attestation: '0x34',
+                  eventNonce,
+                }],
+              }
+            },
+          }
+        }
+        const request = JSON.parse(options.body)
+        assert.equal(request.method, 'eth_call')
+        assert.equal(request.params[0].to.toLowerCase(), monad.cctp.contracts.v2.messageTransmitter.toLowerCase())
+        return {
+          ok: true,
+          async json() {
+            return {
+              error: { message: 'execution reverted: Nonce already used' },
+            }
+          },
+        }
+      }
+
+      const claim = await fetchManualClaim('mainnet', 'sonic', transactionHash)
+      assert.equal(claim.destinationStatus.state, 'claimed')
+      assert.match(manualClaimBlockReason(claim, null), /already claimed on Monad/)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
   it('loads an external burn from Circle and submits only the destination mint', async () => {
     const ethereum = getDefinition('mainnet', 'ethereum')
     const sonic = getDefinition('mainnet', 'sonic')
@@ -262,7 +389,8 @@ describe('external CCTP v2 manual claim', () => {
     const transactionHash = `0x${'ab'.repeat(32)}`
     const originalFetch = globalThis.fetch
     let preparedAction
-    let fetchCalls = 0
+    let messageFetchCalls = 0
+    let nonceCheckCalls = 0
     const eventNonce = `0x${'cd'.repeat(32)}`
     const rawMessage = makeCctpV2Message({
       sourceDomain: ethereum.cctp.domain,
@@ -270,8 +398,17 @@ describe('external CCTP v2 manual claim', () => {
       eventNonce,
       mintRecipient: walletAddress,
     })
-    globalThis.fetch = async (url) => {
-      fetchCalls += 1
+    globalThis.fetch = async (url, options = {}) => {
+      if (!String(url).includes('/v2/messages/')) {
+        const request = JSON.parse(options.body)
+        nonceCheckCalls += 1
+        assert.equal(request.method, 'eth_call')
+        return {
+          ok: true,
+          async json() { return { result: '0x' } },
+        }
+      }
+      messageFetchCalls += 1
       assert.match(String(url), new RegExp(`/v2/messages/${ethereum.cctp.domain}`))
       assert.match(String(url), /transactionHash=/)
       return {
@@ -331,7 +468,8 @@ describe('external CCTP v2 manual claim', () => {
       assert.equal(preparedAction.params.message, rawMessage)
       assert.equal(preparedAction.params.destinationAddress, walletAddress)
       assert.match(result.txHash, /^0xef/)
-      assert.equal(fetchCalls, 2)
+      assert.equal(messageFetchCalls, 2)
+      assert.equal(nonceCheckCalls, 2)
     } finally {
       globalThis.fetch = originalFetch
     }

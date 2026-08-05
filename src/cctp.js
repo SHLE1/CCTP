@@ -50,7 +50,7 @@ import {
 import { createViemAdapterFromProvider } from '@circle-fin/adapter-viem-v2'
 import { createSolanaAdapterFromProvider } from '@circle-fin/adapter-solana'
 import { Connection, PublicKey } from '@solana/web3.js'
-import { formatUnits, isAddress, parseUnits } from 'viem'
+import { encodeFunctionData, formatUnits, isAddress, parseUnits } from 'viem'
 import {
   TRANSFER_STORAGE_VERSION,
   createBridgeResultDraft,
@@ -530,15 +530,27 @@ async function evmJsonRpc(definition, method, params) {
 }
 
 const CCTP_RECEIVE_MESSAGE_SELECTOR = '0x57ecfd28'
+const CCTP_RECEIVE_MESSAGE_ABI = [{
+  type: 'function',
+  name: 'receiveMessage',
+  stateMutability: 'nonpayable',
+  inputs: [
+    { name: 'message', type: 'bytes' },
+    { name: 'attestation', type: 'bytes' },
+  ],
+  outputs: [],
+}]
 
-function markClaimAlreadyCompleted(result, stepIndex) {
+function markClaimAlreadyCompleted(result, stepIndex = -1) {
   const steps = [...(result.steps || [])]
-  steps[stepIndex] = {
-    ...steps[stepIndex],
+  const completedStep = {
+    ...(stepIndex >= 0 ? steps[stepIndex] : { name: 'mint' }),
     state: 'noop',
     errorMessage: 'Claim was already completed on-chain.',
     errorCategory: undefined,
   }
+  if (stepIndex >= 0) steps[stepIndex] = completedStep
+  else steps.push(completedStep)
   return { ...result, state: 'success', steps }
 }
 
@@ -583,33 +595,132 @@ async function isConsumedCctpClaim(definition, txHash) {
   return false
 }
 
+async function isConsumedCctpMessage(definition, caller, message, attestation) {
+  if (
+    definition.type !== 'evm'
+    || !definition.cctp?.contracts?.v2?.messageTransmitter
+    || !isAddress(caller || '')
+  ) {
+    return false
+  }
+
+  try {
+    const data = encodeFunctionData({
+      abi: CCTP_RECEIVE_MESSAGE_ABI,
+      functionName: 'receiveMessage',
+      args: [message, attestation],
+    })
+    await evmJsonRpc(definition, 'eth_call', [{
+      from: caller,
+      to: definition.cctp.contracts.v2.messageTransmitter,
+      data,
+    }, 'latest'])
+  } catch (error) {
+    return /nonce already used/i.test(String(error?.message || error))
+  }
+  return false
+}
+
+async function isClaimCompletedFromBurn(result, environment) {
+  try {
+    const sourceId = findChainIdForDefinition(environment, result.source?.chain)
+    const destinationId = findChainIdForDefinition(environment, result.destination?.chain)
+    if (!sourceId || !destinationId || sourceId === destinationId) return false
+
+    const burnStep = result.steps?.find(
+      (step) => /burn/i.test(String(step?.name || '')) && step?.state === 'success',
+    )
+    if (!burnStep?.txHash || validateManualClaimBurnHash(environment, sourceId, burnStep.txHash)) {
+      return false
+    }
+
+    const source = getDefinition(environment, sourceId)
+    const message = await fetchManualClaimResponse(
+      environment,
+      source.cctp.domain,
+      burnStep.txHash,
+    )
+    if (
+      Number(message.cctpVersion) !== 2
+      || String(message.status || '').toLowerCase() !== 'complete'
+      || !/^0x(?:[0-9a-fA-F]{2})+$/.test(String(message.message || ''))
+      || !/^0x(?:[0-9a-fA-F]{2})+$/.test(String(message.attestation || ''))
+    ) {
+      return false
+    }
+
+    const decoded = decodeCctpV2Message(message.message)
+    const destination = getDefinition(environment, destinationId)
+    const expectedRecipient = String(result.destination?.recipientAddress || '').trim()
+    const decodedRecipient = normalizeDecodedAddress(decoded.mintRecipient, destination)
+    const recipientMatches = destination.type === 'evm'
+      ? isAddress(expectedRecipient)
+        && decodedRecipient.toLowerCase() === expectedRecipient.toLowerCase()
+      : decodedRecipient === expectedRecipient
+    if (
+      decoded.sourceDomain !== Number(source.cctp.domain)
+      || decoded.destinationDomain !== Number(destination.cctp.domain)
+      || decoded.amount !== parseUnits(String(result.amount), 6).toString()
+      || !recipientMatches
+      || (message.eventNonce
+        && decoded.eventNonce.toLowerCase() !== String(message.eventNonce).toLowerCase())
+    ) {
+      return false
+    }
+
+    if (destination.type === 'solana') {
+      const status = await getSolanaManualClaimStatus(
+        environment,
+        destination,
+        decoded.eventNonce,
+      )
+      return status.state === 'claimed'
+    }
+    return isConsumedCctpMessage(
+      destination,
+      result.destination?.address || expectedRecipient,
+      message.message,
+      message.attestation,
+    )
+  } catch {
+    // Reconciliation is best-effort; unavailable attestation/RPC data must not invent success.
+    return false
+  }
+}
+
 /**
  * A relayer and a self-claim can race for the same CCTP message. If the later
  * receiveMessage transaction reverts because its nonce was already consumed,
  * the transfer is complete rather than failed.
  */
 export async function reconcileAlreadyCompletedClaim(result, environment) {
-  if (result?.state !== 'error' || !Array.isArray(result.steps)) return result
-
-  let stepIndex = -1
-  for (let index = result.steps.length - 1; index >= 0; index -= 1) {
-    if (result.steps[index]?.state !== 'error') continue
-    stepIndex = index
-    break
-  }
-  const step = result.steps[stepIndex]
   if (
-    stepIndex < 0
-    || !/(?:mint|claim|forward)/i.test(String(step?.name || ''))
-    || !/^0x[0-9a-f]{64}$/i.test(String(step?.txHash || ''))
+    (result?.state !== 'error' && result?.state !== 'pending')
+    || !Array.isArray(result.steps)
   ) {
     return result
   }
 
-  const destinationId = findChainIdForDefinition(environment, result.destination?.chain)
-  if (!destinationId) return result
-  const definition = getDefinition(environment, destinationId)
-  return await isConsumedCctpClaim(definition, step.txHash)
+  let stepIndex = -1
+  for (let index = result.steps.length - 1; index >= 0; index -= 1) {
+    if (result.steps[index]?.state !== 'error') continue
+    if (/(?:mint|claim|forward)/i.test(String(result.steps[index]?.name || ''))) {
+      stepIndex = index
+      break
+    }
+  }
+  const step = result.steps[stepIndex]
+  if (/^0x[0-9a-f]{64}$/i.test(String(step?.txHash || ''))) {
+    const destinationId = findChainIdForDefinition(environment, result.destination?.chain)
+    if (destinationId) {
+      const definition = getDefinition(environment, destinationId)
+      if (await isConsumedCctpClaim(definition, step.txHash)) {
+        return markClaimAlreadyCompleted(result, stepIndex)
+      }
+    }
+  }
+
+  return await isClaimCompletedFromBurn(result, environment)
     ? markClaimAlreadyCompleted(result, stepIndex)
     : result
 }
@@ -1028,9 +1139,26 @@ export async function fetchManualClaim(environment, sourceId, transactionHash) {
     throw new Error('Circle returned invalid transfer recipient details.')
   }
   const destinationCaller = decoded.destinationCaller
-  const destinationStatus = destination.type === 'solana'
-    ? await getSolanaManualClaimStatus(environment, destination, message.eventNonce)
-    : null
+  let destinationStatus = null
+  if (destination.type === 'solana') {
+    destinationStatus = await getSolanaManualClaimStatus(
+      environment,
+      destination,
+      message.eventNonce,
+    )
+  } else {
+    const claimCaller = isZeroDestinationCaller(destinationCaller)
+      ? mintRecipient
+      : normalizeDecodedAddress(destinationCaller, destination)
+    if (await isConsumedCctpMessage(
+      destination,
+      claimCaller,
+      message.message,
+      message.attestation,
+    )) {
+      destinationStatus = { state: 'claimed' }
+    }
+  }
   return {
     environment,
     sourceId,
