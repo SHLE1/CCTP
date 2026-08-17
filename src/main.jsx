@@ -2310,30 +2310,38 @@ function BridgeCard({ environment, chains, resumeRequest = 0, onManualClaim }) {
       )}
 
       <div className="meta-row">
-        <div className="info-pills" aria-label="Transfer estimate">
-          <span className="info-pill soft">Fee {feeLabel}</span>
-          <span className="info-pill soft">ETA {eta}</span>
-          {quote.data && feeBreakdown.forwarder !== '0' && (
-            <span className="info-pill soft">Orbit {feeBreakdown.forwarder}</span>
-          )}
-          {receive != null && <span className="info-pill soft">Receive {receive}</span>}
-          <span className="info-pill">CCTP v2</span>
-        </div>
-        <label className={`fast-toggle${!source.supportsFast ? ' disabled' : ''}`}>
-          <span>Fast</span>
+        <div className="speed-toggle" role="radiogroup" aria-label="Transfer speed">
           <button
             type="button"
-            role="switch"
-            aria-label="Transfer speed"
-            aria-checked={speed === 'fast'}
-            disabled={!source.supportsFast}
-            title={!source.supportsFast ? 'Fast is not available on this source chain' : 'Off is Standard'}
-            className={speed === 'fast' ? 'on' : ''}
-            onClick={() => setSpeed(speed === 'fast' ? 'standard' : 'fast')}
+            role="radio"
+            aria-checked={speed === 'standard'}
+            className={speed === 'standard' ? 'active' : ''}
+            onClick={() => setSpeed('standard')}
           >
-            <i />
+            Standard
           </button>
-        </label>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={speed === 'fast'}
+            className={speed === 'fast' ? 'active' : ''}
+            disabled={!source.supportsFast}
+            title={!source.supportsFast ? 'Fast is not available on this source chain' : 'Higher USDC fee, faster attestation'}
+            onClick={() => setSpeed('fast')}
+          >
+            <Zap size={13} aria-hidden="true" />
+            Fast
+          </button>
+        </div>
+        <div className="delivery-facts" aria-label="Transfer estimate">
+          <span><small>Est.</small> {eta}</span>
+          <span><small>Fee</small> {feeLabel}</span>
+          {quote.data && feeBreakdown.forwarder !== '0' && (
+            <span><small>Orbit</small> {feeBreakdown.forwarder}</span>
+          )}
+          {receive != null && <span><small>Receive</small> {receive}</span>}
+          <span className="protocol-badge">CCTP v2</span>
+        </div>
       </div>
 
       {quoteIsCurrent && quoteCountdownLabel && (
@@ -2347,7 +2355,7 @@ function BridgeCard({ environment, chains, resumeRequest = 0, onManualClaim }) {
 
       {quote.error && <div className="error-message quote-error" role="alert"><Info size={14} /><span>{quote.error}</span></div>}
 
-      <button>
+      <button
         className={`primary-button${(!wallet || needsDestinationWallet) ? ' connect' : ''}`}
         onClick={primaryAction}
         disabled={formBlocked}
