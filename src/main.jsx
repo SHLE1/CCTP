@@ -5,7 +5,6 @@ import { ConnectionProvider, WalletProvider, useWallet } from '@solana/wallet-ad
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui'
 import {
   ArrowLeftRight,
-  ArrowRight,
   Check,
   ChevronDown,
   ChevronRight,
@@ -20,7 +19,6 @@ import {
   Moon,
   Search,
   Sun,
-  UserRound,
   Wallet,
   X,
   Zap,
@@ -311,7 +309,17 @@ function formatQuoteCountdown(ms) {
   return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
-function ChainSelect({ chains, label, value, otherValue, onChange, rpcLimited = false }) {
+function ChainSelect({
+  chains,
+  label,
+  value,
+  otherValue,
+  onChange,
+  rpcLimited = false,
+  detail,
+  account,
+  onDisconnect,
+}) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [recentIds, setRecentIds] = useState(loadRecentChainIds)
@@ -349,10 +357,21 @@ function ChainSelect({ chains, label, value, otherValue, onChange, rpcLimited = 
 
   return (
     <div className="field-group chain-field">
-      <span className="field-label">{label}</span>
+      <div className="field-label-row">
+        <span className="field-label">{label}</span>
+        {account && (
+          <span className="field-account">
+            {account}
+            {onDisconnect && (
+              <button type="button" onClick={onDisconnect}>Disconnect</button>
+            )}
+          </span>
+        )}
+      </div>
       <button className="chain-trigger" onClick={() => setOpen(true)} aria-label={`Choose ${label.toLowerCase()}`}>
         <ChainMark chain={selected} />
         <span className="chain-name">{selected.name}</span>
+        {detail ? <span className="chain-detail">{detail}</span> : null}
         <ChevronRight className="chev" size={16} strokeWidth={2} />
       </button>
       {open && (
@@ -1186,7 +1205,7 @@ function ProgressModal({
   )
 }
 
-function BridgeCard({ environment, chains, resumeRequest = 0 }) {
+function BridgeCard({ environment, chains, resumeRequest = 0, onManualClaim }) {
   const solanaWalletState = useWallet()
   const [sourceId, setSourceId] = useState('base')
   // Default to a corridor this build can actually serve: Solana needs a private RPC.
@@ -2071,16 +2090,21 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
             <img
               src="/cctp-one-logo.png"
               alt=""
-              width="32"
-              height="32"
+              width="28"
+              height="28"
               draggable={false}
             />
           </span>
           <div>
             <h1>Transfer USDC</h1>
-            <p className="card-sub">Native USDC across chains via Circle CCTP · Mainnet</p>
+            <p className="card-sub">Native USDC. No interface fee.</p>
           </div>
         </div>
+        {onManualClaim && (
+          <button type="button" className="card-pill" onClick={onManualClaim}>
+            Manual claim
+          </button>
+        )}
       </div>
 
       {resumeHint && (
@@ -2114,11 +2138,38 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
       )}
 
       <div className="chain-grid">
-        <ChainSelect chains={chains} label="Source Chain" value={sourceId} otherValue={destinationId} onChange={setSource} rpcLimited={publicSolanaRpc} />
+        <ChainSelect
+          chains={chains}
+          label="Source Chain"
+          value={sourceId}
+          otherValue={destinationId}
+          onChange={setSource}
+          rpcLimited={publicSolanaRpc}
+          detail={wallet ? `${balanceLabel} USDC` : undefined}
+          account={wallet ? shortAddress(wallet.address) : undefined}
+          onDisconnect={wallet ? disconnect : undefined}
+        />
         <button className="swap-button" onClick={swap} aria-label="Swap chains">
           <ArrowLeftRight size={15} />
         </button>
-        <ChainSelect chains={chains} label="Destination Chain" value={destinationId} otherValue={sourceId} onChange={setDestination} rpcLimited={publicSolanaRpc} />
+        <ChainSelect
+          chains={chains}
+          label="Destination Chain"
+          value={destinationId}
+          otherValue={sourceId}
+          onChange={setDestination}
+          rpcLimited={publicSolanaRpc}
+          account={
+            !useForwarder && source.family !== destination.family && destinationWallet
+              ? shortAddress(destinationWallet.address)
+              : undefined
+          }
+          onDisconnect={
+            !useForwarder && source.family !== destination.family && destinationWallet
+              ? disconnectDestination
+              : undefined
+          }
+        />
       </div>
 
       <div className="amount-panel">
@@ -2157,9 +2208,12 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
         )}
       </div>
 
-      <div className="recipient-panel">
+      <div className={`recipient-panel${recipient ? '' : ' idle'}${recipient && !recipientError ? ' valid' : ''}`}>
         <div className="amount-meta">
-          <span className="field-label" id="recipient-label">Recipient on {destination.name}</span>
+          <span className="field-label" id="recipient-label">
+            Send to
+            <small>{destination.name}</small>
+          </span>
           {suggestedRecipient && recipient !== suggestedRecipient && (
             <button
               type="button"
@@ -2173,19 +2227,24 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
             </button>
           )}
         </div>
-        <input
-          value={recipient}
-          onChange={(event) => {
-            setRecipientTouched(true)
-            setRecipient(event.target.value.trim())
-          }}
-          placeholder={destination.family === 'evm' ? '0x…' : 'Solana address…'}
-          aria-labelledby="recipient-label"
-          aria-label="Destination recipient address"
-          aria-invalid={recipientInvalid || undefined}
-          aria-describedby={recipientInvalid ? recipientErrorId : undefined}
-          spellCheck="false"
-        />
+        <div className="recipient-field">
+          <input
+            value={recipient}
+            onChange={(event) => {
+              setRecipientTouched(true)
+              setRecipient(event.target.value.trim())
+            }}
+            placeholder={destination.family === 'evm' ? '0x…' : 'Solana address…'}
+            aria-labelledby="recipient-label"
+            aria-label="Destination recipient address"
+            aria-invalid={recipientInvalid || undefined}
+            aria-describedby={recipientInvalid ? recipientErrorId : undefined}
+            spellCheck="false"
+          />
+          {recipient && !recipientError && (
+            <CircleCheck className="recipient-ok" size={18} aria-hidden="true" />
+          )}
+        </div>
         {recipient && recipientError && (
           <small className="field-error" id={recipientErrorId}>{recipientError}</small>
         )}
@@ -2193,16 +2252,12 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
 
       <details className="completion-method">
         <summary>
-          <span className="completion-method-icon" aria-hidden="true">
-            {settlementMode === 'manual' ? <UserRound size={18} /> : <ArrowRight size={18} />}
-          </span>
           <span className="completion-method-copy">
-            <small>How the mint finishes</small>
-            <strong>{settlementMode === 'manual' ? 'Self-claim' : 'Orbit automatic'}</strong>
+            <strong>{settlementMode === 'manual' ? 'Self-claim' : 'Orbit'}</strong>
             <span>
               {settlementMode === 'manual'
-                ? `You sign the mint on ${destination.name}. No Orbit fee.`
-                : 'You send once. Circle mints for a quoted USDC fee.'}
+                ? 'You mint · no Orbit fee'
+                : 'Circle mints · quoted fee'}
             </span>
           </span>
           <span className="completion-method-change">
@@ -2255,50 +2310,31 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
       )}
 
       <div className="meta-row">
-        <div className="speed-toggle" role="radiogroup" aria-label="Transfer speed">
-          <button
-            type="button"
-            role="radio"
-            aria-checked={speed === 'standard'}
-            className={speed === 'standard' ? 'active' : ''}
-            onClick={() => setSpeed('standard')}
-          >
-            Standard
-          </button>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={speed === 'fast'}
-            className={speed === 'fast' ? 'active' : ''}
-            disabled={!source.supportsFast}
-            title={!source.supportsFast ? 'Fast is not available on this source chain' : 'Higher USDC fee, faster attestation'}
-            onClick={() => setSpeed('fast')}
-          >
-            <Zap size={13} aria-hidden="true" />
-            Fast
-          </button>
-        </div>
-        <div className="delivery-facts" aria-label="Transfer estimate">
-          <span><small>Est.</small> {eta}</span>
-          <span><small>Fee</small> {feeLabel}</span>
-          <span className="protocol-badge">CCTP v2</span>
-        </div>
-      </div>
-
-      {(quote.data || destinationGasEstimate || receive != null) && (
-        <div className="quote-breakdown" aria-label="Quote details">
+        <div className="info-pills" aria-label="Transfer estimate">
+          <span className="info-pill soft">Fee {feeLabel}</span>
+          <span className="info-pill soft">ETA {eta}</span>
           {quote.data && feeBreakdown.forwarder !== '0' && (
-            <span>Orbit fee {feeBreakdown.forwarder}</span>
+            <span className="info-pill soft">Orbit {feeBreakdown.forwarder}</span>
           )}
-          {quote.data && feeBreakdown.protocol !== '0' && (
-            <span>CCTP fee {feeBreakdown.protocol}</span>
-          )}
-          {destinationGasEstimate && (
-            <span>Claim gas {destinationGasEstimate.fees.fee} {destinationGasEstimate.token}</span>
-          )}
-          {receive != null && <span>Receive {receive} USDC</span>}
+          {receive != null && <span className="info-pill soft">Receive {receive}</span>}
+          <span className="info-pill">CCTP v2</span>
         </div>
-      )}
+        <label className={`fast-toggle${!source.supportsFast ? ' disabled' : ''}`}>
+          <span>Fast</span>
+          <button
+            type="button"
+            role="switch"
+            aria-label="Transfer speed"
+            aria-checked={speed === 'fast'}
+            disabled={!source.supportsFast}
+            title={!source.supportsFast ? 'Fast is not available on this source chain' : 'Off is Standard'}
+            className={speed === 'fast' ? 'on' : ''}
+            onClick={() => setSpeed(speed === 'fast' ? 'standard' : 'fast')}
+          >
+            <i />
+          </button>
+        </label>
+      </div>
 
       {quoteIsCurrent && quoteCountdownLabel && (
         <div className="quote-freshness" role="status">
@@ -2310,21 +2346,9 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
       )}
 
       {quote.error && <div className="error-message quote-error" role="alert"><Info size={14} /><span>{quote.error}</span></div>}
-      {wallet && (
-        <div className="connected-row">
-          <span><Wallet size={14} />Source · {shortAddress(wallet.address)}</span>
-          <button type="button" onClick={disconnect}>Disconnect</button>
-        </div>
-      )}
-      {!useForwarder && source.family !== destination.family && destinationWallet && (
-        <div className="connected-row">
-          <span><Wallet size={14} />Claim · {shortAddress(destinationWallet.address)}</span>
-          <button type="button" onClick={disconnectDestination}>Disconnect</button>
-        </div>
-      )}
 
-      <button
-        className="primary-button"
+      <button>
+        className={`primary-button${(!wallet || needsDestinationWallet) ? ' connect' : ''}`}
         onClick={primaryAction}
         disabled={formBlocked}
       >
@@ -2357,7 +2381,6 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
                                 ? 'Preparing quote…'
                                 : 'Get quote'}
       </button>
-      <p className="card-trust">No interface fee · Native USDC · Uses Circle CCTP v2</p>
 
       {walletModal && (
         <WalletModal
@@ -2569,9 +2592,6 @@ function TransferHistory({ environment, chains, onResume, onManualClaim, onRecov
 
   const historyTools = (
     <div className="history-tools">
-      <button type="button" className="ghost-btn" onClick={onManualClaim}>
-        Manual claim
-      </button>
       <button type="button" className="ghost-btn" onClick={onRecoverRent}>
         Recover rent
       </button>
@@ -2939,6 +2959,10 @@ function App({ environment }) {
           environment={environment}
           chains={chains}
           resumeRequest={resumeRequest}
+          onManualClaim={() => {
+            setLookupOpen(false)
+            setManualClaimOpen(true)
+          }}
         />
 
         <TransferHistory
