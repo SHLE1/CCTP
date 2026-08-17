@@ -1211,7 +1211,7 @@ summary:focus-visible,
 
 /* Transfer history */
 .history-section {
-  width: min(640px, 100%);
+  width: min(900px, 100%);
   margin-top: 48px;
   padding-top: 18px;
   border-top: 1px solid var(--border);
@@ -1415,13 +1415,16 @@ summary:focus-visible,
   font-size: 11px;
   font-weight: 700;
 }
+.history-table-head > span:last-child {
+  text-align: right;
+}
 .history-table-body {
   display: grid;
   gap: 8px;
 }
 .history-row {
   min-height: 64px;
-  padding: 10px 12px 10px 18px;
+  padding: 10px 18px;
   border: 1px solid var(--border);
   border-radius: var(--radius-2xl);
   background: var(--surface);
@@ -1481,10 +1484,10 @@ summary:focus-visible,
 .history-action,
 .history-action-menu > summary {
   min-height: 36px;
-  border: 1px solid transparent;
+  border: 1px solid var(--btn-secondary-border);
   border-radius: 12px;
-  background: var(--btn);
-  color: var(--btn-text);
+  background: var(--btn-secondary-bg);
+  color: var(--btn-secondary-text);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1496,7 +1499,10 @@ summary:focus-visible,
   white-space: nowrap;
 }
 .history-action:hover,
-.history-action-menu > summary:hover { opacity: 0.9; }
+.history-action-menu > summary:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
 .history-action.secondary {
   background: var(--btn-secondary-bg);
   border-color: var(--btn-secondary-border);
