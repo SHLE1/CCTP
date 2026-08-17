@@ -74,6 +74,7 @@ describe('Bridge Kit chain coverage', () => {
     'unichain',
     'worldchain',
     'xdc',
+    'xlayer',
   ]
 
   it('includes every USDC mainnet exported by Bridge Kit', () => {
@@ -90,6 +91,7 @@ describe('Bridge Kit chain coverage', () => {
     assert.equal(supportsFastTransfer('mainnet', 'base'), true)
     assert.equal(supportsFastTransfer('mainnet', 'avalanche'), false)
     assert.equal(supportsFastTransfer('mainnet', 'polygon'), false)
+    assert.equal(supportsFastTransfer('mainnet', 'xlayer'), true)
   })
 
   it('exposes destination Forwarding Service availability', () => {
@@ -102,33 +104,51 @@ describe('Bridge Kit chain coverage', () => {
 describe('external CCTP v2 manual claim', () => {
   const uintHex = (value, bytes) => BigInt(value).toString(16).padStart(bytes * 2, '0')
   const bytes32 = (value = '0x') => value.replace(/^0x/i, '').padStart(64, '0')
+  const addressHex = (address, definition) => definition.type === 'evm'
+    ? bytes32(address)
+    : Buffer.from(new PublicKey(address).toBytes()).toString('hex')
   const makeCctpV2Message = ({
     sourceDomain,
     destinationDomain,
     eventNonce,
     mintRecipient,
+    messageSender,
+    messageRecipient,
+    burnToken,
     destinationCaller = '0x',
     amount = '1000000',
+    maxFee = '0',
+    feeExecuted = '0',
     expirationBlock = '0',
-  }) => `0x${[
-    uintHex(1, 4),
-    uintHex(sourceDomain, 4),
-    uintHex(destinationDomain, 4),
-    bytes32(eventNonce),
-    bytes32(),
-    bytes32(),
-    bytes32(destinationCaller),
-    uintHex(1000, 4),
-    uintHex(1000, 4),
-    uintHex(1, 4),
-    bytes32(),
-    bytes32(mintRecipient),
-    uintHex(amount, 32),
-    bytes32(),
-    uintHex(0, 32),
-    uintHex(0, 32),
-    uintHex(expirationBlock, 32),
-  ].join('')}`
+  }) => {
+    const source = getDefinition(
+      'mainnet',
+      findChainIdForDomain('mainnet', sourceDomain),
+    )
+    const destination = getDefinition(
+      'mainnet',
+      findChainIdForDomain('mainnet', destinationDomain),
+    )
+    return `0x${[
+      uintHex(1, 4),
+      uintHex(sourceDomain, 4),
+      uintHex(destinationDomain, 4),
+      bytes32(eventNonce),
+      addressHex(messageSender || source.cctp.contracts.v2.tokenMessenger, source),
+      addressHex(messageRecipient || destination.cctp.contracts.v2.tokenMessenger, destination),
+      bytes32(destinationCaller),
+      uintHex(1000, 4),
+      uintHex(1000, 4),
+      uintHex(1, 4),
+      addressHex(burnToken || source.usdcAddress, source),
+      bytes32(mintRecipient),
+      uintHex(amount, 32),
+      bytes32(),
+      uintHex(maxFee, 32),
+      uintHex(feeExecuted, 32),
+      uintHex(expirationBlock, 32),
+    ].join('')}`
+  }
 
   it('maps Circle domains and validates source transaction identifiers', () => {
     assert.equal(
@@ -148,6 +168,44 @@ describe('external CCTP v2 manual claim', () => {
       validateManualClaimBurnHash('mainnet', 'solana', '1'.repeat(88)),
       '',
     )
+  })
+
+  it('rejects an attested message that is not a native USDC burn', async () => {
+    const ethereum = getDefinition('mainnet', 'ethereum')
+    const sonic = getDefinition('mainnet', 'sonic')
+    const transactionHash = `0x${'8a'.repeat(32)}`
+    const eventNonce = `0x${'8b'.repeat(32)}`
+    const message = makeCctpV2Message({
+      sourceDomain: ethereum.cctp.domain,
+      destinationDomain: sonic.cctp.domain,
+      eventNonce,
+      mintRecipient: '0x1111111111111111111111111111111111111111',
+      burnToken: '0x2222222222222222222222222222222222222222',
+    })
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = async () => ({
+      ok: true,
+      status: 200,
+      async json() {
+        return {
+          messages: [{
+            cctpVersion: 2,
+            status: 'complete',
+            message,
+            attestation: '0x34',
+            eventNonce,
+          }],
+        }
+      },
+    })
+    try {
+      await assert.rejects(
+        fetchManualClaim('mainnet', 'ethereum', transactionHash),
+        /not a supported native USDC burn/,
+      )
+    } finally {
+      globalThis.fetch = originalFetch
+    }
   })
 
   it('blocks relayed or caller-restricted burns before destination signing', () => {
@@ -441,6 +499,7 @@ describe('external CCTP v2 manual claim', () => {
       const claim = await fetchManualClaim('mainnet', 'ethereum', transactionHash)
       assert.equal(claim.destinationId, 'sonic')
       assert.equal(claim.amountMicro, '1000000')
+      assert.equal(claim.receiveAmountMicro, '1000000')
 
       const wallet = {
         address: walletAddress,
@@ -470,6 +529,94 @@ describe('external CCTP v2 manual claim', () => {
       assert.match(result.txHash, /^0xef/)
       assert.equal(messageFetchCalls, 2)
       assert.equal(nonceCheckCalls, 2)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('uses a re-attested Fast Transfer with a refreshed future expiration block', async () => {
+    const ethereum = getDefinition('mainnet', 'ethereum')
+    const sonic = getDefinition('mainnet', 'sonic')
+    const walletAddress = '0x1111111111111111111111111111111111111111'
+    const transactionHash = `0x${'aa'.repeat(32)}`
+    const eventNonce = `0x${'ce'.repeat(32)}`
+    const expiredMessage = makeCctpV2Message({
+      sourceDomain: ethereum.cctp.domain,
+      destinationDomain: sonic.cctp.domain,
+      eventNonce,
+      mintRecipient: walletAddress,
+      expirationBlock: '1',
+    })
+    const refreshedMessage = makeCctpV2Message({
+      sourceDomain: ethereum.cctp.domain,
+      destinationDomain: sonic.cctp.domain,
+      eventNonce,
+      mintRecipient: walletAddress,
+      expirationBlock: '1000',
+    })
+    const originalFetch = globalThis.fetch
+    let reattestRequested = false
+    let preparedMessage = ''
+
+    globalThis.fetch = async (url, options = {}) => {
+      const target = String(url)
+      if (target.includes('/v2/reattest/')) {
+        reattestRequested = true
+        return { ok: true, status: 200 }
+      }
+      if (target.includes('/v2/messages/')) {
+        const refreshed = reattestRequested
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return {
+              messages: [{
+                cctpVersion: 2,
+                status: 'complete',
+                message: refreshed ? refreshedMessage : expiredMessage,
+                attestation: refreshed ? '0x56' : '0x34',
+                eventNonce,
+              }],
+            }
+          },
+        }
+      }
+      const request = JSON.parse(options.body)
+      assert.equal(request.method, 'eth_call')
+      return { ok: true, async json() { return { result: '0x' } } }
+    }
+
+    const wallet = {
+      address: walletAddress,
+      family: 'evm',
+      provider: {
+        async request({ method }) {
+          if (method === 'eth_accounts') return [walletAddress]
+          if (method === 'eth_chainId') return `0x${sonic.chainId.toString(16)}`
+          if (method === 'eth_blockNumber') return '0x2'
+          throw new Error(`unexpected method: ${method}`)
+        },
+      },
+      adapter: {
+        async prepareAction(_action, params) {
+          preparedMessage = params.message
+          return { async execute() { return `0x${'ef'.repeat(32)}` } }
+        },
+        async waitForTransaction() {
+          return { status: 'confirmed' }
+        },
+      },
+    }
+
+    try {
+      await executeManualClaim({
+        environment: 'mainnet',
+        sourceId: 'ethereum',
+        transactionHash,
+      }, wallet)
+      assert.equal(reattestRequested, true)
+      assert.equal(preparedMessage, refreshedMessage)
     } finally {
       globalThis.fetch = originalFetch
     }

@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import { WalletReadyState } from '@solana/wallet-adapter-base'
 import { ConnectionProvider, WalletProvider, useWallet } from '@solana/wallet-adapter-react'
-import { WalletModalButton, WalletModalProvider } from '@solana/wallet-adapter-react-ui'
+import { WalletModalProvider } from '@solana/wallet-adapter-react-ui'
 import {
   ArrowLeftRight,
   ArrowRight,
@@ -11,13 +12,13 @@ import {
   CircleAlert,
   CircleCheck,
   Clock3,
-  Coins,
   ExternalLink,
   Filter,
   Globe,
   Info,
   LoaderCircle,
   Moon,
+  Search,
   Sun,
   UserRound,
   Wallet,
@@ -108,6 +109,7 @@ const CHAIN_META = {
   unichain: { family: 'evm', icon: '/icons/unichain.png', color: '#FF2D8D', eta: '~15–19 min', fastEta: '~8 sec' },
   worldchain: { family: 'evm', icon: '/icons/world-chain.webp', color: '#111111', eta: '~15–19 min', fastEta: '~8 sec' },
   xdc: { family: 'evm', icon: '/icons/xdc.webp', color: '#0D97D5', eta: '~10 sec' },
+  xlayer: { family: 'evm', color: '#111111', eta: '~15–19 min', fastEta: '~8 sec' },
 }
 
 const USDC_ICON = '/icons/usdc.png'
@@ -139,6 +141,7 @@ const CHAIN_NAMES = {
   unichain: 'Unichain',
   worldchain: 'World Chain',
   xdc: 'XDC',
+  xlayer: 'X Layer',
 }
 
 // Rough usage-based ordering: corridors people actually bridge between come first,
@@ -235,6 +238,72 @@ function useEscapeToClose(open, onClose, enabled = true) {
   }, [enabled, onClose, open])
 }
 
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(', ')
+
+function useDialogFocus(open, containerRef) {
+  useEffect(() => {
+    if (!open) return undefined
+    const root = containerRef.current
+    if (!root) return undefined
+
+    const items = () => [...root.querySelectorAll(FOCUSABLE_SELECTOR)].filter((element) => (
+      element.getAttribute('aria-hidden') !== 'true'
+      && element.tabIndex !== -1
+      && !element.hasAttribute('disabled')
+    ))
+
+    const previous = document.activeElement
+    const preferred = root.querySelector('[data-autofocus]') || items()[0]
+    preferred?.focus()
+
+    const onKeyDown = (event) => {
+      if (event.key !== 'Tab') return
+      const list = items()
+      if (!list.length) return
+      const first = list[0]
+      const last = list[list.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    root.addEventListener('keydown', onKeyDown)
+    return () => {
+      root.removeEventListener('keydown', onKeyDown)
+      if (previous instanceof HTMLElement && document.contains(previous)) previous.focus()
+    }
+  }, [containerRef, open])
+}
+
+const RECENT_CHAINS_KEY = 'relay:recent-chains'
+
+function loadRecentChainIds() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(RECENT_CHAINS_KEY) || '[]')
+    return Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function rememberChainId(id) {
+  const next = [id, ...loadRecentChainIds().filter((item) => item !== id)].slice(0, 4)
+  try {
+    localStorage.setItem(RECENT_CHAINS_KEY, JSON.stringify(next))
+  } catch { /* ignore */ }
+}
+
 function formatQuoteCountdown(ms) {
   const totalSeconds = Math.max(0, Math.ceil(ms / 1000))
   const minutes = Math.floor(totalSeconds / 60)
@@ -244,8 +313,40 @@ function formatQuoteCountdown(ms) {
 
 function ChainSelect({ chains, label, value, otherValue, onChange, rpcLimited = false }) {
   const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [recentIds, setRecentIds] = useState(loadRecentChainIds)
+  const dialogRef = useRef(null)
   const selected = findChain(chains, value)
+  const titleId = `chain-select-${label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`
+  const title = label.toLowerCase().startsWith('select ') ? label : `Select ${label.toLowerCase()}`
+  const normalized = query.trim().toLowerCase()
+  const visible = chains.filter((chain) => {
+    if (!normalized) return true
+    return (
+      chain.name.toLowerCase().includes(normalized)
+      || chain.id.toLowerCase().includes(normalized)
+      || (chain.family === 'evm' ? 'evm' : 'svm').includes(normalized)
+    )
+  })
+  const recents = recentIds
+    .map((id) => findChain(chains, id))
+    .filter((chain) => chain && chain.id !== otherValue)
+    .slice(0, 4)
+
   useEscapeToClose(open, () => setOpen(false))
+  useDialogFocus(open, dialogRef)
+
+  useEffect(() => {
+    if (!open) setQuery('')
+  }, [open])
+
+  function choose(id) {
+    rememberChainId(id)
+    setRecentIds(loadRecentChainIds())
+    onChange(id)
+    setOpen(false)
+  }
+
   return (
     <div className="field-group chain-field">
       <span className="field-label">{label}</span>
@@ -255,20 +356,42 @@ function ChainSelect({ chains, label, value, otherValue, onChange, rpcLimited = 
         <ChevronRight className="chev" size={16} strokeWidth={2} />
       </button>
       {open && (
-        <div className="modal-layer" role="dialog" aria-modal="true" aria-labelledby="chain-select-title">
-          <button className="modal-backdrop" onClick={() => setOpen(false)} aria-label="Close chain selector" />
+        <div className="modal-layer" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+          <button className="modal-backdrop" tabIndex={-1} onClick={() => setOpen(false)} aria-label="Close chain selector" />
           <div className="sheet">
             <div className="sheet-head">
-              <h3 id="chain-select-title">Select chain</h3>
+              <h3 id={titleId}>{title}</h3>
               <button className="icon-button" onClick={() => setOpen(false)} aria-label="Close"><X size={18} /></button>
             </div>
+            <label className="chain-search">
+              <Search size={15} aria-hidden="true" />
+              <span className="visually-hidden">Search chains</span>
+              <input
+                data-autofocus
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search chains"
+                autoComplete="off"
+                spellCheck="false"
+              />
+            </label>
+            {!normalized && recents.length > 0 && (
+              <div className="chain-recents" aria-label="Recent chains">
+                {recents.map((chain) => (
+                  <button type="button" key={chain.id} className="chain-recent" onClick={() => choose(chain.id)}>
+                    <ChainMark chain={chain} small />
+                    {chain.name}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="chain-list">
-              {chains.map((chain) => (
+              {visible.map((chain) => (
                 <button
                   key={chain.id}
                   disabled={chain.id === otherValue}
                   className={`chain-option ${chain.id === value ? 'active' : ''}`}
-                  onClick={() => { onChange(chain.id); setOpen(false) }}
+                  onClick={() => choose(chain.id)}
                 >
                   <ChainMark chain={chain} />
                   <span>
@@ -282,6 +405,9 @@ function ChainSelect({ chains, label, value, otherValue, onChange, rpcLimited = 
                   {chain.id === otherValue && <small className="in-use">In use</small>}
                 </button>
               ))}
+              {!visible.length && (
+                <p className="chain-empty">No chains match “{query.trim()}”.</p>
+              )}
             </div>
           </div>
         </div>
@@ -290,46 +416,114 @@ function ChainSelect({ chains, label, value, otherValue, onChange, rpcLimited = 
   )
 }
 
-function SolanaWalletConnector({ chain, environment, onConnected }) {
-  const { wallet, wallets, connected, connecting, publicKey, connect } = useWallet()
-  const [message, setMessage] = useState('')
-  const [preparing, setPreparing] = useState(false)
+const EVM_INSTALL = [
+  { name: 'MetaMask', url: 'https://metamask.io/download' },
+  { name: 'Rabby', url: 'https://rabby.io' },
+  { name: 'Coinbase Wallet', url: 'https://www.coinbase.com/wallet' },
+]
+
+const SOLANA_INSTALL = [
+  { name: 'Phantom', url: 'https://phantom.app/download' },
+  { name: 'Solflare', url: 'https://solflare.com' },
+  { name: 'Backpack', url: 'https://backpack.app/download' },
+]
+
+function WalletRow({ name, icon, busy, disabled, onClick, autofocus = false }) {
+  return (
+    <button
+      type="button"
+      className={`wallet-row${busy ? ' busy' : ''}`}
+      onClick={onClick}
+      disabled={disabled}
+      aria-busy={busy || undefined}
+      data-autofocus={autofocus || undefined}
+    >
+      <WalletMark name={name} icon={icon} />
+      <span className="wallet-row-copy">
+        <strong>{name}</strong>
+        {busy && <small>Confirm in the extension</small>}
+      </span>
+      {busy && <LoaderCircle className="spin" size={16} />}
+    </button>
+  )
+}
+
+function WalletInstallHint({ wallets }) {
+  return (
+    <div className="wallet-empty">
+      <p>No browser wallet detected.</p>
+      <div className="wallet-install">
+        {wallets.map((item) => (
+          <a key={item.url} href={item.url} target="_blank" rel="noopener noreferrer">
+            {item.name}
+          </a>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function SolanaWalletConnector({ chain, environment, onConnected, connectingId, setConnectingId, setMessage }) {
+  const { wallet, wallets, connected, connecting, publicKey, connect, select } = useWallet()
   const handledConnection = useRef('')
+  const installed = wallets.filter((item) => item.readyState === WalletReadyState.Installed)
 
   useEffect(() => {
     if (!wallet?.adapter || connected || connecting) return
     setMessage('')
-    connect().catch((error) => setMessage(friendlyError(error)))
-  }, [connect, connected, connecting, wallet])
+    setConnectingId(wallet.adapter.name)
+    connect().catch((error) => {
+      setConnectingId('')
+      setMessage(friendlyError(error))
+    })
+  }, [connect, connected, connecting, setConnectingId, setMessage, wallet])
 
   useEffect(() => {
     if (!connected || !wallet?.adapter || !publicKey) return
     const connectionKey = `${wallet.adapter.name}:${publicKey.toString()}:${environment}`
     if (handledConnection.current === connectionKey) return
     handledConnection.current = connectionKey
-    setPreparing(true)
+    setConnectingId(wallet.adapter.name)
     setMessage('')
     connectSourceWallet(environment, chain.id, wallet.adapter)
       .then(onConnected)
       .catch((error) => {
         handledConnection.current = ''
+        setConnectingId('')
         setMessage(friendlyError(error))
       })
-      .finally(() => setPreparing(false))
-  }, [chain.id, connected, environment, onConnected, publicKey, wallet])
+  }, [chain.id, connected, environment, onConnected, publicKey, setConnectingId, setMessage, wallet])
+
+  function pick(name) {
+    setMessage('')
+    if (wallet?.adapter.name === name) {
+      setConnectingId(name)
+      connect().catch((error) => {
+        setConnectingId('')
+        setMessage(friendlyError(error))
+      })
+      return
+    }
+    setConnectingId(name)
+    select(name)
+  }
+
+  if (!installed.length) return <WalletInstallHint wallets={SOLANA_INSTALL} />
 
   return (
-    <>
-      <WalletModalButton>
-        {preparing ? 'Preparing…' : connecting ? 'Waiting…' : 'Choose Solana wallet'}
-      </WalletModalButton>
-      <p className="hint">
-        {wallets.length
-          ? `${wallets.length} wallet${wallets.length === 1 ? '' : 's'} detected`
-          : 'Install a Solana wallet extension to continue'}
-      </p>
-      {message && <p className="error-message"><Info size={14} />{message}</p>}
-    </>
+    <div className="wallet-list">
+      {installed.map((item, index) => (
+        <WalletRow
+          key={item.adapter.name}
+          name={item.adapter.name}
+          icon={item.adapter.icon}
+          busy={connectingId === item.adapter.name || (connecting && wallet?.adapter.name === item.adapter.name)}
+          disabled={Boolean(connectingId) && connectingId !== item.adapter.name}
+          onClick={() => pick(item.adapter.name)}
+          autofocus={index === 0}
+        />
+      ))}
+    </div>
   )
 }
 
@@ -337,7 +531,9 @@ function WalletModal({ chain, environment, onClose, onConnected }) {
   const [connectingProvider, setConnectingProvider] = useState('')
   const [message, setMessage] = useState('')
   const [evmProviders, setEvmProviders] = useState([])
+  const dialogRef = useRef(null)
   useEscapeToClose(true, onClose, !connectingProvider)
+  useDialogFocus(true, dialogRef)
 
   useEffect(() => {
     if (chain.family !== 'evm') return undefined
@@ -365,41 +561,52 @@ function WalletModal({ chain, environment, onClose, onConnected }) {
   }
 
   return (
-    <div className="modal-layer" role="dialog" aria-modal="true" aria-labelledby="wallet-modal-title">
-      <button className="modal-backdrop" onClick={onClose} aria-label="Close wallet dialog" />
-      <div className="sheet">
-        <div className="sheet-head">
-          <h3 id="wallet-modal-title">Connect · {chain.name}</h3>
-          <button className="icon-button" onClick={onClose} aria-label="Close"><X size={18} /></button>
+    <div className="modal-layer" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="wallet-modal-title">
+      <button className="modal-backdrop" tabIndex={-1} onClick={onClose} aria-label="Close wallet dialog" />
+      <div className="sheet wallet-sheet">
+        <div className="wallet-sheet-head">
+          <div>
+            <h3 id="wallet-modal-title">Connect wallet</h3>
+            <p className="wallet-sheet-sub">
+              <ChainMark chain={chain} small />
+              <span>{chain.name}</span>
+              <small>{chain.family === 'solana' ? 'Solana' : 'EVM'}</small>
+            </p>
+          </div>
+          <button className="sheet-close" onClick={onClose} aria-label="Close">
+            <X size={16} />
+          </button>
         </div>
         {chain.family === 'solana'
-          ? <SolanaWalletConnector chain={chain} environment={environment} onConnected={onConnected} />
-          : <>
-            {evmProviders.map((entry) => (
-              <button
-                className="wallet-option"
-                key={entry.info.uuid}
-                onClick={() => connect(entry)}
-                disabled={Boolean(connectingProvider)}
-              >
-                <WalletMark name={entry.info.name} icon={entry.info.icon} />
-                <span>
-                  <strong>
-                    {connectingProvider === entry.info.uuid ? 'Waiting for wallet…' : entry.info.name}
-                  </strong>
-                  <small>{entry.info.rdns || 'EIP-1193 wallet'}</small>
-                </span>
-                <ArrowRight size={16} />
-              </button>
-            ))}
-            {!evmProviders.length && (
-              <p className="hint">No EVM wallet detected. Install or unlock MetaMask, Rabby, or Coinbase Wallet.</p>
-            )}
-            {message && <p className="error-message"><Info size={14} />{message}</p>}
-          </>}
-        <p className="legal-note mainnet-note">
-          Mainnet uses real USDC and gas. Connecting does not move funds.
-        </p>
+          ? (
+            <SolanaWalletConnector
+              chain={chain}
+              environment={environment}
+              onConnected={onConnected}
+              connectingId={connectingProvider}
+              setConnectingId={setConnectingProvider}
+              setMessage={setMessage}
+            />
+          )
+          : evmProviders.length
+            ? (
+              <div className="wallet-list">
+                {evmProviders.map((entry, index) => (
+                  <WalletRow
+                    key={entry.info.uuid}
+                    name={entry.info.name}
+                    icon={entry.info.icon}
+                    busy={connectingProvider === entry.info.uuid}
+                    disabled={Boolean(connectingProvider) && connectingProvider !== entry.info.uuid}
+                    onClick={() => connect(entry)}
+                    autofocus={index === 0}
+                  />
+                ))}
+              </div>
+            )
+            : <WalletInstallHint wallets={EVM_INSTALL} />}
+        {message && <div className="error-message" role="alert"><Info size={14} /><span>{message}</span></div>}
+        <p className="wallet-sheet-foot">Mainnet · connecting does not move funds.</p>
       </div>
     </div>
   )
@@ -420,6 +627,7 @@ function ManualClaimModal({
   const [walletModalOpen, setWalletModalOpen] = useState(false)
   const [error, setError] = useState('')
   const [result, setResult] = useState(null)
+  const dialogRef = useRef(null)
   const busy = phase === 'searching' || phase === 'claiming'
   const source = findChain(chains, sourceId)
   const destination = claim ? findChain(chains, claim.destinationId) : null
@@ -432,7 +640,9 @@ function ManualClaimModal({
           : manualClaimBlockReason(claim, claimWallet, solanaRecipientOwner)
       )
     : ''
-  const amount = claim ? formatUsdcFromMicro(BigInt(claim.amountMicro)) : ''
+  const amount = claim
+    ? formatUsdcFromMicro(BigInt(claim.receiveAmountMicro ?? claim.amountMicro))
+    : ''
   const destinationStatus = claim?.destinationStatus || null
   const alreadyClaimed = destinationStatus?.state === 'claimed'
   const claimStatusLabel = alreadyClaimed
@@ -441,6 +651,7 @@ function ManualClaimModal({
       ? 'Status unavailable'
       : 'Ready to claim'
   useEscapeToClose(true, onClose, !busy && !walletModalOpen)
+  useDialogFocus(!walletModalOpen, dialogRef)
 
   function resetClaim(nextSourceId = sourceId, nextHash = transactionHash) {
     setSourceId(nextSourceId)
@@ -517,8 +728,8 @@ function ManualClaimModal({
               : 'Claim USDC'
 
   return (
-    <div className="modal-layer" role="dialog" aria-modal="true" aria-labelledby="manual-claim-title">
-      <button className="modal-backdrop" onClick={onClose} aria-label="Close manual claim" disabled={busy} />
+    <div className="modal-layer" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="manual-claim-title">
+      <button className="modal-backdrop" tabIndex={-1} onClick={onClose} aria-label="Close manual claim" disabled={busy} />
       <div className="sheet manual-claim-sheet">
         <div className="sheet-head">
           <div className="sheet-head-copy">
@@ -791,6 +1002,8 @@ function ProgressModal({
   }, [busy])
 
   useEscapeToClose(true, onClose, !busy)
+  const dialogRef = useRef(null)
+  useDialogFocus(true, dialogRef)
 
   const primaryAction = phase === 'success'
     ? onClose
@@ -810,8 +1023,8 @@ function ProgressModal({
             : `Start ${ENVIRONMENT_LABEL} transfer`
 
   return (
-    <div className="modal-layer" role="dialog" aria-modal="true" aria-labelledby="progress-modal-title">
-      <button className="modal-backdrop" onClick={busy ? undefined : onClose} aria-label="Close transfer dialog" disabled={busy} />
+    <div className="modal-layer" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="progress-modal-title">
+      <button className="modal-backdrop" tabIndex={-1} onClick={busy ? undefined : onClose} aria-label="Close transfer dialog" disabled={busy} />
       <div className="sheet progress-sheet">
         <div className="sheet-head">
           <div className="sheet-head-copy">
@@ -955,10 +1168,10 @@ function ProgressModal({
         {busy && phase !== 'attest' && (
           <p className="progress-hint">Keep this tab open while the transfer runs. Progress is saved so you can resume if something fails.</p>
         )}
-        {error && <div className="error-message"><Info size={15} /><span>{error}</span></div>}
-        {warning && <div className="real-warning"><Info size={15} /><span>{warning}</span></div>}
+        {error && <div className="error-message" role="alert"><Info size={15} /><span>{error}</span></div>}
+        {warning && <div className="real-warning" role="status"><Info size={15} /><span>{warning}</span></div>}
         {retryBlockedReason && (
-          <div className="error-message"><Info size={15} /><span>{retryBlockedReason}</span></div>
+          <div className="error-message" role="alert"><Info size={15} /><span>{retryBlockedReason}</span></div>
         )}
         <button
           className="primary-button"
@@ -981,11 +1194,12 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
     usesPublicSolanaRpc(environment) ? 'arbitrum' : 'solana'
   ))
   const [amount, setAmount] = useState('')
-  const [speed, setSpeed] = useState('fast')
+  const [speed, setSpeed] = useState('standard')
   const [settlementMode, setSettlementMode] = useState('manual')
   const [wallet, setWallet] = useState(null)
   const [destinationWallet, setDestinationWallet] = useState(null)
   const [recipient, setRecipient] = useState('')
+  const [recipientTouched, setRecipientTouched] = useState(false)
   const [quote, setQuote] = useState({
     status: 'idle',
     data: null,
@@ -994,7 +1208,7 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
     quotedAt: 0,
   })
   const [walletModal, setWalletModal] = useState(null)
-  const [manualClaimOpen, setManualClaimOpen] = useState(false)
+  const [resumeHint, setResumeHint] = useState('')
   const [transfer, setTransfer] = useState({
     open: false,
     phase: 'ready',
@@ -1023,6 +1237,9 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
   const needsDestinationWallet = !useForwarder
     && source.family !== destination.family
     && !destinationWallet
+  const suggestedRecipient = source.family === destination.family
+    ? (wallet?.address || '')
+    : (destinationWallet?.address || '')
   const amountError = validateAmount(amount)
   const feeBreakdown = quoteFeeBreakdown(quote.data)
   const receive = quote.data && !amountError ? subtractUsdcAmounts(amount, feeBreakdown.total) : null
@@ -1268,6 +1485,11 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
     }
   }, [destinationWallet, solanaWalletState.connected, solanaWalletState.publicKey])
 
+  useEffect(() => {
+    if (recipientTouched) return
+    setRecipient((current) => (current === suggestedRecipient ? current : suggestedRecipient))
+  }, [recipientTouched, suggestedRecipient])
+
   async function swap() {
     if (source.family === 'evm' && destination.family === 'evm' && wallet?.family === 'evm') {
       try {
@@ -1283,7 +1505,7 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
     }
     setSourceId(destinationId)
     setDestinationId(sourceId)
-    setRecipient('')
+    setRecipientTouched(false)
   }
 
   async function setSource(value) {
@@ -1325,6 +1547,7 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
     }
     if (!nextDestination?.supportsForwarder) setSettlementMode('manual')
     setDestinationId(value)
+    if (destination.family !== nextDestination?.family) setRecipientTouched(false)
   }
 
   const recipientError = validateRecipient(environment, destinationId, recipient)
@@ -1665,9 +1888,10 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
   async function resumeLastTransfer() {
     const saved = loadPersistedTransfer(environment)
     if (!saved) {
-      window.alert('No saved transfer found in this browser. After a partial transfer you can retry from here.')
+      setResumeHint('No unfinished transfer is saved in this browser. Start a new transfer, or use Manual claim for a burn from another app.')
       return
     }
+    setResumeHint('')
     if (!saved.legacy && saved.result?.state === 'error') {
       const reconciled = await reconcileAlreadyCompletedClaim(saved.result, environment)
       if (reconciled.state === 'success') {
@@ -1700,6 +1924,7 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
       setDestinationId(restoredDestinationId)
       setAmount(String(saved.result.amount || ''))
       setRecipient(restoredRecipient)
+      setRecipientTouched(true)
       setSpeed(restoredSpeed)
       setSettlementMode(saved.result.destination?.useForwarder === true ? 'orbit' : 'manual')
       setQuote({ status: 'idle', data: null, error: '', key: '', quotedAt: 0 })
@@ -1843,26 +2068,24 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
       <div className="card-topline">
         <div className="card-title">
           <span className="bridge-icon" aria-hidden="true">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-              <path d="M4 14c0-3.3 2.7-6 6-6h4c3.3 0 6 2.7 6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-              <path d="M3 14h18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-              <path d="M6 14v4M10 14v4M14 14v4M18 14v4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-            </svg>
+            <img
+              src="/cctp-one-logo.png"
+              alt=""
+              width="32"
+              height="32"
+              draggable={false}
+            />
           </span>
           <div>
             <h1>Transfer USDC</h1>
             <p className="card-sub">Native USDC across chains via Circle CCTP · Mainnet</p>
           </div>
         </div>
-        <div className="card-actions">
-          <button type="button" className="ghost-btn" onClick={() => setManualClaimOpen(true)}>
-            Manual claim
-          </button>
-          <button type="button" className="ghost-btn" onClick={resumeLastTransfer}>
-            Resume latest transfer
-          </button>
-        </div>
       </div>
+
+      {resumeHint && (
+        <div className="resume-hint" role="status">{resumeHint}</div>
+      )}
 
       {incompleteNotice && (
         <div className="resume-banner" role="status">
@@ -1937,19 +2160,25 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
       <div className="recipient-panel">
         <div className="amount-meta">
           <span className="field-label" id="recipient-label">Recipient on {destination.name}</span>
-          {(claimWallet || (useForwarder && wallet && source.family === destination.family)) && (
+          {suggestedRecipient && recipient !== suggestedRecipient && (
             <button
               type="button"
               className="use-wallet"
-              onClick={() => setRecipient((claimWallet || wallet).address)}
+              onClick={() => {
+                setRecipient(suggestedRecipient)
+                setRecipientTouched(false)
+              }}
             >
-              Use wallet
+              {source.family === destination.family ? 'Use source' : 'Use wallet'}
             </button>
           )}
         </div>
         <input
           value={recipient}
-          onChange={(event) => setRecipient(event.target.value.trim())}
+          onChange={(event) => {
+            setRecipientTouched(true)
+            setRecipient(event.target.value.trim())
+          }}
           placeholder={destination.family === 'evm' ? '0x…' : 'Solana address…'}
           aria-labelledby="recipient-label"
           aria-label="Destination recipient address"
@@ -1968,12 +2197,12 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
             {settlementMode === 'manual' ? <UserRound size={18} /> : <ArrowRight size={18} />}
           </span>
           <span className="completion-method-copy">
-            <small>Completion method</small>
+            <small>How the mint finishes</small>
             <strong>{settlementMode === 'manual' ? 'Self-claim' : 'Orbit automatic'}</strong>
             <span>
               {settlementMode === 'manual'
-                ? 'You control minting · No Orbit fee'
-                : 'One source wallet · Quoted USDC fee'}
+                ? `You sign the mint on ${destination.name}. No Orbit fee.`
+                : 'You send once. Circle mints for a quoted USDC fee.'}
             </span>
           </span>
           <span className="completion-method-change">
@@ -1991,7 +2220,7 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
           >
             <span>
               <strong>Self-claim</strong>
-              <small>0 Orbit fee · destination wallet pays gas</small>
+              <small>You sign the mint · destination wallet pays gas</small>
             </span>
             <Check size={16} />
           </button>
@@ -2009,7 +2238,7 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
               <strong>Orbit automatic</strong>
               <small>
                 {forwarderAvailable
-                  ? 'One source wallet · quoted USDC fee'
+                  ? 'Circle mints for you · quoted USDC fee'
                   : `Unavailable to ${destination.name}`}
               </small>
             </span>
@@ -2018,31 +2247,37 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
         </div>
       </details>
 
-      <div className="mode-callout completion-note" role="note">
-        <Info size={14} />
-        <span>
-          {settlementMode === 'manual'
-            ? `${destination.name} wallet signs the mint and pays destination gas.`
-            : 'Circle Forwarding Service completes minting for the quoted USDC fee.'}
-        </span>
-      </div>
+      {needsDestinationWallet && (
+        <p className="completion-note" role="note">
+          <Info size={14} />
+          <span>You’ll connect a {destination.name} wallet to claim. The source wallet only burns.</span>
+        </p>
+      )}
 
       <div className="meta-row">
-        <label className={`fast-toggle ${!source.supportsFast ? 'disabled' : ''}`}>
-          <span><Zap size={16} aria-hidden="true" />Fast transfer</span>
+        <div className="speed-toggle" role="radiogroup" aria-label="Transfer speed">
           <button
             type="button"
-            role="switch"
-            aria-label="Fast Transfer"
-            aria-checked={speed === 'fast'}
-            disabled={!source.supportsFast}
-            title={!source.supportsFast ? 'Fast transfer is not available on this source chain' : undefined}
-            className={speed === 'fast' ? 'on' : ''}
-            onClick={() => setSpeed(speed === 'fast' ? 'standard' : 'fast')}
+            role="radio"
+            aria-checked={speed === 'standard'}
+            className={speed === 'standard' ? 'active' : ''}
+            onClick={() => setSpeed('standard')}
           >
-            <i />
+            Standard
           </button>
-        </label>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={speed === 'fast'}
+            className={speed === 'fast' ? 'active' : ''}
+            disabled={!source.supportsFast}
+            title={!source.supportsFast ? 'Fast is not available on this source chain' : 'Higher USDC fee, faster attestation'}
+            onClick={() => setSpeed('fast')}
+          >
+            <Zap size={13} aria-hidden="true" />
+            Fast
+          </button>
+        </div>
         <div className="delivery-facts" aria-label="Transfer estimate">
           <span><small>Est.</small> {eta}</span>
           <span><small>Fee</small> {feeLabel}</span>
@@ -2136,14 +2371,6 @@ function BridgeCard({ environment, chains, resumeRequest = 0 }) {
           }}
         />
       )}
-      {manualClaimOpen && (
-        <ManualClaimModal
-          environment={environment}
-          chains={chains}
-          initialSourceId={sourceId}
-          onClose={() => setManualClaimOpen(false)}
-        />
-      )}
       {transfer.open && (
         <ProgressModal
           source={modalSource}
@@ -2196,7 +2423,7 @@ function formatHistoryDate(value) {
 
 function HistoryStatus({ state, retryable, canResume }) {
   if (state === 'success') {
-    return <span className="history-status success"><CircleCheck size={17} />Fulfilled</span>
+    return <span className="history-status success"><CircleCheck size={17} />Completed</span>
   }
   if (state === 'error' && canResume) {
     return <span className="history-status action"><CircleAlert size={17} />Action required</span>
@@ -2259,7 +2486,7 @@ function TransactionLinks({ links }) {
   )
 }
 
-function TransferHistory({ environment, chains, onResume }) {
+function TransferHistory({ environment, chains, onResume, onManualClaim, onRecoverRent }) {
   const [records, setRecords] = useState(() => loadTransferHistory(environment))
   const [statusFilter, setStatusFilter] = useState('all')
   const [sourceFilter, setSourceFilter] = useState('all')
@@ -2340,24 +2567,37 @@ function TransferHistory({ environment, chains, onResume }) {
     { id: 'failed', label: 'Failed', count: statusCounts.failed },
   ]
 
+  const historyTools = (
+    <div className="history-tools">
+      <button type="button" className="ghost-btn" onClick={onManualClaim}>
+        Manual claim
+      </button>
+      <button type="button" className="ghost-btn" onClick={onRecoverRent}>
+        Recover rent
+      </button>
+    </div>
+  )
+
   return (
     <section className="history-section" aria-labelledby="history-title">
       <div className="history-heading">
         <div>
           <h2 id="history-title">Recent transfers</h2>
+          <p className="history-heading-note">
+            Saved in this browser. Only the latest unfinished transfer can be resumed here.
+          </p>
         </div>
-        <span>Saved in this browser</span>
+        {historyTools}
       </div>
 
       {records.length ? (
         <>
           <div className="history-toolbar">
-            <div className="history-quick-filters" role="tablist" aria-label="Filter transfers by status">
+            <div className="history-quick-filters" role="group" aria-label="Filter transfers by status">
               {statusOptions.map((option) => (
                 <button
                   type="button"
-                  role="tab"
-                  aria-selected={statusFilter === option.id}
+                  aria-pressed={statusFilter === option.id}
                   className={statusFilter === option.id ? 'active' : ''}
                   onClick={() => setStatusFilter(option.id)}
                   key={option.id}
@@ -2447,6 +2687,9 @@ function TransferHistory({ environment, chains, onResume }) {
                       Resume
                     </button>
                   )}
+                  {record.retryable && record.id !== records[0]?.id && (
+                    <span className="history-action-muted">Resume is only available for the latest saved transfer</span>
+                  )}
                   {record.id !== records[0]?.id
                     && record.state === 'error'
                     && Array.isArray(record.txHashes)
@@ -2455,18 +2698,18 @@ function TransferHistory({ environment, chains, onResume }) {
                         type="button"
                         className="history-action secondary"
                         disabled={checkingId === record.id}
-                        title={checkFailedId === record.id
-                          ? 'On-chain completion was not found. The saved status was not changed.'
-                          : 'Check this transfer on-chain'}
                         onClick={() => checkHistoricalStatus(record)}
                       >
                         {checkingId === record.id
                           ? 'Checking…'
                           : checkFailedId === record.id
-                            ? 'Not completed'
+                            ? 'Not completed on-chain'
                             : 'Check status'}
                       </button>
                     )}
+                  {checkFailedId === record.id && (
+                    <span className="history-action-muted">On-chain completion was not found. Status unchanged.</span>
+                  )}
                   <TransactionLinks links={record.explorerLinks} />
                 </span>
               </div>
@@ -2550,7 +2793,7 @@ function QuickLinksMenu() {
 
   useEffect(() => {
     if (!open) return
-    rootRef.current?.querySelector('.explore-link')?.focus()
+    rootRef.current?.querySelector('.explore-panel')?.focus()
   }, [open])
 
   const close = () => setOpen(false)
@@ -2573,7 +2816,7 @@ function QuickLinksMenu() {
         <ChevronDown size={11} className="explore-chev" aria-hidden="true" />
       </button>
       {open && (
-        <nav className="explore-panel" id="explore-panel" aria-labelledby="explore-trigger">
+        <nav className="explore-panel" id="explore-panel" aria-labelledby="explore-trigger" tabIndex={-1}>
           {QUICK_LINKS.map((group) => (
             <div className="explore-group" key={group.id}>
               <span className="explore-group-label">{group.label}</span>
@@ -2629,6 +2872,8 @@ function App({ environment }) {
   const [theme, setTheme] = useState(resolveInitialTheme)
   const [resumeRequest, setResumeRequest] = useState(0)
   const [lookupOpen, setLookupOpen] = useState(false)
+  const [manualClaimOpen, setManualClaimOpen] = useState(false)
+  const lookupDialogRef = useRef(null)
 
   useEffect(() => {
     applyTheme(theme)
@@ -2642,6 +2887,8 @@ function App({ environment }) {
       document.body.style.overflow = previousOverflow
     }
   }, [lookupOpen])
+  useEscapeToClose(lookupOpen, () => setLookupOpen(false))
+  useDialogFocus(lookupOpen, lookupDialogRef)
 
   function toggleTheme() {
     setTheme((current) => (current === 'dark' ? 'light' : 'dark'))
@@ -2649,8 +2896,9 @@ function App({ environment }) {
 
   return (
     <div className="app">
+      <a className="skip-link" href="#bridge">Skip to transfer</a>
       <header className="topbar">
-        <a className="brand" href="#" aria-label="CCTP One home">
+        <a className="brand" href="#bridge" aria-label="CCTP One home">
           <img
             className="brand-mark"
             src="/cctp-one-logo.png"
@@ -2665,18 +2913,6 @@ function App({ environment }) {
           </span>
         </a>
         <div className="topbar-right">
-          <button
-            type="button"
-            className="topbar-nav"
-            onClick={() => setLookupOpen(true)}
-            aria-haspopup="dialog"
-            aria-expanded={lookupOpen}
-            aria-label="Recover Solana rent"
-            title="Recover Solana rent"
-          >
-            <Coins size={14} />
-            <span className="topbar-nav-label">Recover rent</span>
-          </button>
           <a
             className="topbar-nav"
             href="https://developers.circle.com/cctp"
@@ -2712,6 +2948,14 @@ function App({ environment }) {
             setResumeRequest((current) => current + 1)
             document.getElementById('bridge')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
           }}
+          onManualClaim={() => {
+            setLookupOpen(false)
+            setManualClaimOpen(true)
+          }}
+          onRecoverRent={() => {
+            setManualClaimOpen(false)
+            setLookupOpen(true)
+          }}
         />
 
       </main>
@@ -2733,9 +2977,19 @@ function App({ environment }) {
         </p>
       </footer>
 
+      {manualClaimOpen && (
+        <ManualClaimModal
+          environment={environment}
+          chains={chains}
+          initialSourceId="base"
+          onClose={() => setManualClaimOpen(false)}
+        />
+      )}
+
       {lookupOpen && (
         <div
           className="lookup-drawer-layer"
+          ref={lookupDialogRef}
           role="dialog"
           aria-modal="true"
           aria-labelledby="lookup-title"
@@ -2743,6 +2997,7 @@ function App({ environment }) {
           <button
             type="button"
             className="modal-backdrop"
+            tabIndex={-1}
             onClick={() => setLookupOpen(false)}
             aria-label="Close rent recovery"
           />

@@ -56,7 +56,7 @@ describe('design system tokens match incumbent CSS', () => {
     assert.match(main, /function formatQuoteCountdown/)
     assert.match(main, /incompleteNotice/)
     assert.match(main, /mode-callout/)
-    assert.match(main, /aria-label="Fast Transfer"/)
+    assert.match(main, /aria-label="Transfer speed"/)
     assert.match(styles, /button:focus-visible/)
     assert.match(styles, /transition:\s*transform/)
     assert.match(styles, /\.resume-banner/)

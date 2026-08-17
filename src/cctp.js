@@ -46,6 +46,8 @@ import {
   WorldChainSepolia,
   XDC,
   XDCApothem,
+  XLayer,
+  XLayerTestnet,
 } from '@circle-fin/bridge-kit/chains'
 import { createViemAdapterFromProvider } from '@circle-fin/adapter-viem-v2'
 import { createSolanaAdapterFromProvider } from '@circle-fin/adapter-solana'
@@ -66,7 +68,6 @@ export {
   QUOTE_TTL_MS,
   TRANSFER_STORAGE_VERSION,
   USDC_DECIMALS,
-  addUsdcAmounts,
   beginQuoteRefresh,
   canStartTransferFromQuote,
   createBridgeResultDraft,
@@ -81,7 +82,6 @@ export {
   parseUsdcToMicro,
   quoteInputKey,
   quoteFeeBreakdown,
-  quoteFees,
   resolveAmountFieldError,
   safeExplorerUrl,
   sanitizeAmountInput,
@@ -116,6 +116,7 @@ const DEFINITIONS = {
     sei: Sei,
     worldchain: WorldChain,
     xdc: XDC,
+    xlayer: XLayer,
   },
   testnet: {
     ethereum: EthereumSepolia,
@@ -141,6 +142,7 @@ const DEFINITIONS = {
     sei: SeiTestnet,
     worldchain: WorldChainSepolia,
     xdc: XDCApothem,
+    xlayer: XLayerTestnet,
   },
 }
 
@@ -178,6 +180,7 @@ const FAST_TRANSFER_CHAIN_IDS = new Set([
   'solana',
   'unichain',
   'worldchain',
+  'xlayer',
 ])
 
 function assertEnvironment(environment) {
@@ -742,12 +745,7 @@ export async function fetchUsdcBalance(environment, chainId, address, provider) 
   }
 
   const connection = new Connection(getSolanaRpcEndpoint(environment), 'confirmed')
-  const owner = new PublicKey(address)
-  const mint = new PublicKey(definition.usdcAddress)
-  const [ata] = PublicKey.findProgramAddressSync(
-    [owner.toBuffer(), SOLANA_TOKEN_PROGRAM_ID.toBuffer(), mint.toBuffer()],
-    SOLANA_ASSOCIATED_TOKEN_PROGRAM_ID,
-  )
+  const ata = deriveSolanaUsdcAta(definition, address)
   try {
     const balance = await connection.getTokenAccountBalance(ata, 'confirmed')
     return formatUsdcFromMicro(BigInt(balance.value.amount))
@@ -889,12 +887,7 @@ export async function checkDestinationReadiness(environment, chainId, address, u
   const definition = getDefinition(environment, chainId)
   if (definition.type !== 'solana') return { ready: true }
 
-  const owner = new PublicKey(address.trim())
-  const mint = new PublicKey(definition.usdcAddress)
-  const [ata] = PublicKey.findProgramAddressSync(
-    [owner.toBuffer(), SOLANA_TOKEN_PROGRAM_ID.toBuffer(), mint.toBuffer()],
-    SOLANA_ASSOCIATED_TOKEN_PROGRAM_ID,
-  )
+  const ata = deriveSolanaUsdcAta(definition, address)
   const connection = new Connection(getSolanaRpcEndpoint(environment), 'confirmed')
   const account = await connection.getAccountInfo(ata, 'confirmed')
   if (!account && !useForwarder) {
@@ -917,7 +910,7 @@ function deriveSolanaUsdcAta(definition, ownerAddress) {
     [owner.toBuffer(), SOLANA_TOKEN_PROGRAM_ID.toBuffer(), mint.toBuffer()],
     SOLANA_ASSOCIATED_TOKEN_PROGRAM_ID,
   )
-  return ata.toString()
+  return ata
 }
 
 function normalizeDecodedAddress(value, definition) {
@@ -974,9 +967,14 @@ function decodeCctpV2Message(value) {
     sourceDomain: Number(uint(4, 4)),
     destinationDomain: Number(uint(8, 4)),
     eventNonce: bytes(12, 32),
+    sender: bytes(44, 32),
+    recipient: bytes(76, 32),
     destinationCaller: bytes(108, 32),
+    burnToken: bytes(152, 32),
     mintRecipient: bytes(184, 32),
     amount: uint(216, 32).toString(),
+    maxFee: uint(280, 32).toString(),
+    feeExecuted: uint(312, 32).toString(),
     expirationBlock: uint(344, 32).toString(),
   }
 }
@@ -1127,6 +1125,26 @@ export async function fetchManualClaim(environment, sourceId, transactionHash) {
     throw new Error('Circle returned a nonce that does not match the attested message.')
   }
   const destination = getDefinition(environment, destinationId)
+  const messageAddresses = [
+    [decoded.sender, source.cctp.contracts.v2.tokenMessenger, source],
+    [decoded.recipient, destination.cctp.contracts.v2.tokenMessenger, destination],
+    [decoded.burnToken, source.usdcAddress, source],
+  ]
+  if (messageAddresses.some(([actual, expected, definition]) => (
+    !addressesMatch(normalizeDecodedAddress(actual, definition), expected, definition.type)
+  ))) {
+    throw new Error('The attested message is not a supported native USDC burn.')
+  }
+  const amountMicro = BigInt(decoded.amount)
+  const maxFeeMicro = BigInt(decoded.maxFee)
+  const feeExecutedMicro = BigInt(decoded.feeExecuted)
+  if (
+    amountMicro <= 0n
+    || feeExecutedMicro > maxFeeMicro
+    || feeExecutedMicro >= amountMicro
+  ) {
+    throw new Error('Circle returned invalid CCTP v2 amount or fee details.')
+  }
   let mintRecipient
   try {
     mintRecipient = normalizeDecodedAddress(decoded.mintRecipient, destination)
@@ -1176,6 +1194,9 @@ export async function fetchManualClaim(environment, sourceId, transactionHash) {
     destinationCaller,
     mintRecipient,
     amountMicro: decoded.amount,
+    receiveAmountMicro: (amountMicro - feeExecutedMicro).toString(),
+    maxFeeMicro: decoded.maxFee,
+    feeExecutedMicro: decoded.feeExecuted,
     expirationBlock: decoded.expirationBlock,
   }
 }
@@ -1205,7 +1226,7 @@ export function manualClaimBlockReason(claim, wallet, solanaRecipientOwner = '')
   if (destination.type === 'solana') {
     try {
       const owner = solanaRecipientOwner.trim()
-      if (!owner || deriveSolanaUsdcAta(destination, owner) !== claim.mintRecipient) {
+      if (!owner || deriveSolanaUsdcAta(destination, owner).toString() !== claim.mintRecipient) {
         return 'Enter the Solana recipient wallet whose USDC token account is encoded in this burn.'
       }
     } catch {
@@ -1242,7 +1263,7 @@ async function refreshExpiredManualClaim(claim) {
   let lastError
   for (let attempt = 0; attempt < MANUAL_CLAIM_REATTEST_ATTEMPTS; attempt += 1) {
     if (attempt > 0) {
-      await new Promise((resolve) => window.setTimeout(resolve, MANUAL_CLAIM_REATTEST_DELAY_MS))
+      await new Promise((resolve) => globalThis.setTimeout(resolve, MANUAL_CLAIM_REATTEST_DELAY_MS))
     }
     try {
       const refreshed = await fetchManualClaim(
@@ -1250,7 +1271,16 @@ async function refreshExpiredManualClaim(claim) {
         claim.sourceId,
         claim.transactionHash,
       )
-      if (refreshed.expirationBlock === '0') return refreshed
+      // Iris may briefly keep returning the previous completed message after
+      // accepting re-attestation. A valid refresh can either clear expiration
+      // or assign a new future expiration block, so detect changed signed data.
+      if (
+        refreshed.message !== claim.message
+        && refreshed.expirationBlock !== claim.expirationBlock
+      ) {
+        return refreshed
+      }
+      lastError = new Error('Circle is still returning the previous attestation.')
     } catch (error) {
       lastError = error
     }

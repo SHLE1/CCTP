@@ -13,10 +13,10 @@ Build the production bundle with `pnpm build`. Run pure unit tests with `pnpm te
 
 ## Included
 
-- All 23 USDC mainnets currently exported by Circle Bridge Kit: Arbitrum,
+- All 24 USDC mainnets currently exported by Circle Bridge Kit: Arbitrum,
   Avalanche, Base, Codex, Cronos, EDGE, Ethereum, HyperEVM, Injective, Ink,
   Linea, Monad, Morph, OP Mainnet, Pharos, Plume, Polygon PoS, Sei, Solana,
-  Sonic, Unichain, World Chain, and XDC
+  Sonic, Unichain, World Chain, XDC, and X Layer
 - Wallet Standard auto-discovery for Solana wallets such as Backpack, Phantom and Solflare
 - EIP-6963 EVM wallet discovery for explicit MetaMask, Rabby, and Coinbase Wallet selection (with legacy fallback and account/chain change disconnect)
 - Self-claim mode with destination-wallet mint signing, no Orbit fee, destination gas preflight, and automatic Solana ATA creation

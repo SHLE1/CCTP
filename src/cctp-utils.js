@@ -22,17 +22,6 @@ export function formatUsdcFromMicro(micro) {
   return negative ? `-${body}` : body
 }
 
-export function addUsdcAmounts(...values) {
-  return formatUsdcFromMicro(values.reduce((sum, value) => {
-    if (value == null || value === '') return sum
-    try {
-      return sum + parseUsdcToMicro(value)
-    } catch {
-      return sum
-    }
-  }, 0n))
-}
-
 export function subtractUsdcAmounts(amount, fee) {
   try {
     const result = parseUsdcToMicro(amount) - parseUsdcToMicro(fee || '0')
@@ -388,10 +377,6 @@ export function quoteFeeBreakdown(estimate) {
       error: item.error,
     })),
   }
-}
-
-export function quoteFees(estimate) {
-  return Number(quoteFeeBreakdown(estimate).total) || 0
 }
 
 export function serializeBridgeResult(result) {
