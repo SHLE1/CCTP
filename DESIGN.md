@@ -11,8 +11,8 @@ colors:
   field-light: "#ffffff"
   field-soft-light: "#f3f4fb"
   text-body-light: "#664e4d"
-  muted-light: "#7a6e6d"
-  faint-light: "#a39a99"
+  muted-light: "#6e6362"
+  faint-light: "#736a69"
   border-light: "#dbdeec"
   border-strong-light: "#c8ccd9"
   pill-bg-light: "#dce6f8"
@@ -24,7 +24,7 @@ colors:
   dark-text-body: "#c8c0bf"
   danger-light: "#c2410c"
   danger-dark: "#f87171"
-  green-light: "#059669"
+  green-light: "#05684f"
   green-dark: "#34d399"
   warn-light: "#92400e"
   warn-dark: "#fbbf24"
@@ -102,7 +102,7 @@ components:
     backgroundColor: "{colors.surface-light}"
     textColor: "{colors.primary}"
     rounded: "{rounded.4xl}"
-    padding: "32px 32px 38px"
+    padding: "22px 22px 20px"
   field-input:
     backgroundColor: "{colors.field-light}"
     textColor: "{colors.primary}"
@@ -145,7 +145,7 @@ Dual-theme palette driven by CSS custom properties on `:root`, `[data-theme='lig
 
 ### Neutral
 - **Cool Paper** (`#f8f9ff` bg, `#eeeff7` surface, `#ffffff` fields): Light page and card stack.
-- **Warm Charcoal body** (`#664e4d` text-body, `#7a6e6d` muted, `#a39a99` faint): Secondary copy on light.
+- **Warm Charcoal body** (`#664e4d` text-body, `#6e6362` muted, `#736a69` faint; ≥4.5:1 on all light surfaces): Secondary copy on light.
 - **Border Mist** (`#dbdeec`, strong `#c8ccd9`): Light control borders.
 - **Near Black** (`#0d0200` bg, `#110807` surface): Dark page and panels.
 - **Ash body** (`#c8c0bf` body, `#9a8f8e` muted): Dark secondary text.
@@ -153,11 +153,13 @@ Dual-theme palette driven by CSS custom properties on `:root`, `[data-theme='lig
 ### Semantic
 - **Danger** light `#c2410c` / dark `#f87171` with danger-bg panels
 - **Warn** light `#92400e` / dark `#fbbf24` for mainnet and quote warnings
-- **Success green** light `#059669` / dark `#34d399`
+- **Success green** light `#05684f` / dark `#34d399`
 
 **The Token Surface Rule.** Prefer semantic vars (`--btn`, `--text`, `--border`, `--danger`) over raw hex in components so light/dark stay coherent.
 
 **The One Accent Rule.** In light mode the action accent is violet/blue; in dark mode amber carries primary CTA and strong borders. Do not introduce a third accent family without updating tokens.
+
+**The Chain Brand Exception.** The `color` entries in `src/main.jsx`'s `CHAIN_META` (e.g. Ethereum `#627EEA`, OP `#FF0420`, Solana `#9945FF`) are third-party chain brand marks, registered here as deliberate exceptions to the token palette. They exist to identify chains—paired with text labels, never as theme accents—and do not need token promotion.
 
 ## Typography
 
@@ -180,8 +182,8 @@ Dual-theme palette driven by CSS custom properties on `:root`, `[data-theme='lig
 ## Layout
 
 - App column: topbar (64px) → main (flex start) → footer
-- Primary surface: `.bridge-card` at `min(860px, 100%)` with `24px 32px 28px` padding; the full card (through the trust line) fits a 1280×800 viewport without scrolling
-- Chain row: 3-column grid `1fr 44px 1fr` (source | swap | destination)
+- Primary surface: `.bridge-card` at `min(640px, 100%)` with `22px 22px 20px` padding (`20px 16px` below 560px); the full card (through the trust line) fits a 1280×800 viewport without scrolling
+- Chain row: 3-column grid `1fr 40px 1fr` with 10px gaps (source | swap | destination)
 - Secondary width for history: `min(900px, 100%)`
 - Main padding: 24px 16px 56px; gaps 16px
 - Breakpoints observed: `900px`, `560px` (stack/tighten); min body width 320px
@@ -217,7 +219,7 @@ Hybrid: flat page background + one ambient card/sheet shadow + tonal field nesti
 - **Theme toggle:** 40×40 icon-only, radius 2xl, `--theme-btn-*` bg/border — the sole framed control in the topbar
 
 ### Cards / Containers
-- **Bridge card:** surface + border + 4xl radius + shadow + 28px padding
+- **Bridge card:** surface + border + 4xl radius + shadow + 22px padding
 - **Sheets:** max ~400px (progress sheet may differ), same surface language
 
 ### Inputs / Fields

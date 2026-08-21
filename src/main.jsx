@@ -169,7 +169,7 @@ function ChainMark({ chain, small = false }) {
   const [broken, setBroken] = useState(false)
   if (broken || !chain?.icon) {
     return (
-      <span className={`chain-mark fallback ${small ? 'small' : ''}`} style={{ '--chain-color': chain?.color || '#888' }}>
+      <span className={`chain-mark fallback ${small ? 'small' : ''}`} style={{ '--chain-color': chain?.color || '#6e6362' }}>
         {(chain?.name || '?').slice(0, 1)}
       </span>
     )
@@ -773,15 +773,17 @@ function ManualClaimModal({
             />
             <div className="recipient-panel manual-claim-hash">
               <span className="field-label" id="manual-claim-hash-label">Burn transaction hash</span>
-              <input
-                value={transactionHash}
-                onChange={(event) => resetClaim(sourceId, event.target.value.trim())}
-                placeholder={source.family === 'evm' ? '0x…' : 'Solana signature…'}
-                aria-labelledby="manual-claim-hash-label"
-                aria-invalid={Boolean(transactionHash && hashError) || undefined}
-                spellCheck="false"
-                disabled={busy}
-              />
+              <div className="recipient-field">
+                <input
+                  value={transactionHash}
+                  onChange={(event) => resetClaim(sourceId, event.target.value.trim())}
+                  placeholder={source.family === 'evm' ? '0x…' : 'Solana signature…'}
+                  aria-labelledby="manual-claim-hash-label"
+                  aria-invalid={Boolean(transactionHash && hashError) || undefined}
+                  spellCheck="false"
+                  disabled={busy}
+                />
+              </div>
               {transactionHash && hashError && <small className="field-error">{hashError}</small>}
             </div>
             <div className="mode-callout" role="note">
@@ -2472,7 +2474,7 @@ function HistoryChain({ chains, chainId }) {
   const chain = findChain(chains, chainId) || {
     id: chainId,
     name: chainId || 'Unknown',
-    color: '#7a6e6d',
+    color: '#6e6362',
   }
   return (
     <span className="history-chain">

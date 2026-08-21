@@ -11,7 +11,7 @@
       "surface-light": { "role": "neutral", "displayName": "Lavender Surface", "canonical": "#eeeff7" },
       "dark-bg": { "role": "neutral", "displayName": "Near Black", "canonical": "#0d0200" },
       "danger-light": { "role": "semantic", "displayName": "Danger", "canonical": "#c2410c" },
-      "green-light": { "role": "semantic", "displayName": "Success", "canonical": "#059669" }
+      "green-light": { "role": "semantic", "displayName": "Success", "canonical": "#05684f" }
     },
     "typographyMeta": {
       "display": { "displayName": "Display", "purpose": "Bridge card H1" },

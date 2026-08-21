@@ -263,14 +263,14 @@ function providerFromWalletAdapter(walletAdapter) {
     },
     async connect() {
       if (!walletAdapter.connected) await walletAdapter.connect()
-      if (!walletAdapter.publicKey) throw new Error('钱包已连接，但没有返回 Solana 公钥。')
+      if (!walletAdapter.publicKey) throw new Error('Wallet connected, but it did not return a Solana public key.')
       return { publicKey: walletAdapter.publicKey }
     },
     async disconnect() {
       await walletAdapter.disconnect()
     },
     async signTransaction(transaction) {
-      if (!walletAdapter.signTransaction) throw new Error('该钱包不支持 Solana 交易签名。')
+      if (!walletAdapter.signTransaction) throw new Error('This wallet does not support Solana transaction signing.')
       return walletAdapter.signTransaction(transaction)
     },
     async signAllTransactions(transactions) {
@@ -280,14 +280,14 @@ function providerFromWalletAdapter(walletAdapter) {
       return walletAdapter.signAllTransactions(transactions)
     },
     async signMessage(message) {
-      if (!walletAdapter.signMessage) throw new Error('该钱包不支持消息签名。')
+      if (!walletAdapter.signMessage) throw new Error('This wallet does not support message signing.')
       return { signature: await walletAdapter.signMessage(message) }
     },
   }
 }
 
 async function switchEvmChain(definition, provider = window.ethereum) {
-  if (!provider?.request) throw new Error('未检测到 EVM 钱包，请安装 MetaMask、Rabby 或 Coinbase Wallet。')
+  if (!provider?.request) throw new Error('No EVM wallet detected. Install MetaMask, Rabby, or Coinbase Wallet.')
   const chainId = `0x${definition.chainId.toString(16)}`
   try {
     await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId }] })
@@ -360,7 +360,7 @@ export async function connectSourceWallet(environment, chainId, walletProvider) 
     }
   }
 
-  if (!walletProvider) throw new Error('请选择一个支持 Wallet Standard 的 Solana 钱包。')
+  if (!walletProvider) throw new Error('Select a Solana wallet that supports the Wallet Standard.')
   const provider = providerFromWalletAdapter(walletProvider)
   const response = await provider.connect()
   const connection = new Connection(getSolanaRpcEndpoint(environment), 'confirmed')
@@ -492,22 +492,22 @@ export async function assertSourceWalletReady(environment, chainId, wallet, role
 }
 
 export function validateRecipient(environment, chainId, address) {
-  if (!address?.trim()) return '请输入目标链收款地址'
+  if (!address?.trim()) return 'Enter the recipient address on the destination chain'
   const definition = getDefinition(environment, chainId)
   if (definition.type === 'evm') {
     const recipient = address.trim()
-    if (!isAddress(recipient)) return 'EVM 地址格式不正确'
-    if (recipient.toLowerCase() === EVM_ZERO_ADDRESS) return '不能使用 EVM 零地址作为收款地址'
+    if (!isAddress(recipient)) return 'Invalid EVM address format'
+    if (recipient.toLowerCase() === EVM_ZERO_ADDRESS) return 'The EVM zero address cannot be used as a recipient'
     return ''
   }
   try {
     // Parsing is sufficient for client-side format validation. The bridge SDK
     // performs the authoritative route and recipient validation before signing.
     const recipient = new PublicKey(address.trim())
-    if (recipient.equals(PublicKey.default)) return '不能使用 Solana 默认地址作为收款地址'
+    if (recipient.equals(PublicKey.default)) return 'The Solana system program address cannot be used as a recipient'
     return ''
   } catch {
-    return 'Solana 地址格式不正确'
+    return 'Invalid Solana address format'
   }
 }
 
@@ -1510,7 +1510,7 @@ export async function retryTransfer(result, wallet, destinationWallet, environme
   const sourceId = findChainIdForDefinition(environment, normalizedResult.source.chain)
   const expectedSource = sourceId ? getDefinition(environment, sourceId) : null
   if (!expectedSource || !isWalletCompatibleWithResult(normalizedResult, wallet, expectedSource)) {
-    throw new Error('请连接原转账使用的来源链钱包和账户后再重试。当前钱包与保存的来源地址或网络不匹配。')
+    throw new Error('Reconnect the source wallet and account from the original transfer before retrying. The current wallet does not match the saved source address or network.')
   }
   const destinationId = findChainIdForDefinition(environment, normalizedResult.destination.chain)
   const expectedDestination = destinationId ? getDefinition(environment, destinationId) : null
@@ -1526,7 +1526,7 @@ export async function retryTransfer(result, wallet, destinationWallet, environme
       )
     )
   ) {
-    throw new Error('请连接原转账使用的目的链 Claim 钱包和账户后再重试。')
+    throw new Error('Reconnect the destination claim wallet and account from the original transfer before retrying.')
   }
   const handler = (payload) => onEvent?.(payload)
   kit.on('*', handler)
@@ -1542,9 +1542,9 @@ export async function retryTransfer(result, wallet, destinationWallet, environme
 
 export function friendlyError(error) {
   const message = error?.shortMessage || error?.details || error?.message || String(error)
-  if (/user rejected|denied|4001/i.test(message)) return '你在钱包中取消了请求。'
-  if (/insufficient/i.test(message)) return '余额不足：请确认 USDC 和 Gas 代币都充足。'
-  if (/network mismatch/i.test(message)) return '钱包网络不匹配，请切换到所选网络后重试。'
+  if (/user rejected|denied|4001/i.test(message)) return 'You rejected the request in your wallet.'
+  if (/insufficient/i.test(message)) return 'Insufficient balance. Check that you have enough USDC and gas token.'
+  if (/network mismatch/i.test(message)) return 'Wallet network mismatch. Switch to the selected network and try again.'
   return message.length > 260 ? `${message.slice(0, 257)}…` : message
 }
 
