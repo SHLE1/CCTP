@@ -68,6 +68,7 @@ typography:
     fontSize: "13px"
     fontWeight: 500
 rounded:
+  mark: "6px"
   lg: "0.5rem"
   xl: "0.75rem"
   2xl: "0.625rem"
@@ -145,7 +146,7 @@ Dual-theme palette driven by CSS custom properties on `:root`, `[data-theme='lig
 
 ### Neutral
 - **Cool Paper** (`#f8f9ff` bg, `#eeeff7` surface, `#ffffff` fields): Light page and card stack.
-- **Warm Charcoal body** (`#664e4d` text-body, `#6e6362` muted, `#736a69` faint; ≥4.5:1 on all light surfaces): Secondary copy on light.
+- **Warm Charcoal body** (`#664e4d` text-body, `#6e6362` muted, `#736a69` faint; ≥4.5:1 on all light surfaces): Secondary copy on light. Muted carries real guidance text; faint is reserved for placeholders, decorative icons, and disabled text.
 - **Border Mist** (`#dbdeec`, strong `#c8ccd9`): Light control borders.
 - **Near Black** (`#0d0200` bg, `#110807` surface): Dark page and panels.
 - **Ash body** (`#c8c0bf` body, `#9a8f8e` muted): Dark secondary text.
@@ -203,8 +204,10 @@ Hybrid: flat page background + one ambient card/sheet shadow + tonal field nesti
 
 ## Shapes
 
-- Compact geometry: card/sheet `0.75rem` (`--radius-4xl`)
-- Controls and fields: `0.625rem` (`--radius-2xl`)
+- Compact geometry: card/sheet `0.75rem` (`--radius-4xl`, 12px); page-level panels, dropdowns, and standalone banners share it
+- Controls and fields: `0.625rem` (`--radius-2xl`, 10px); notice boxes nested inside a card or sheet step down to this tier
+- Nested sub-controls (menu items, in-field actions): `0.5rem` (`--radius-lg`, 8px)
+- Square brand/chain marks: 6px micro radius; circles use `50%`, status badges and pills use `999px`
 - Pills/toggles: full pill (`999px`)
 - Chain/USDC marks: circular; wallet marks ~10px radius squares
 - Borders: 1px semantic `--border`, strong on hover/focus
