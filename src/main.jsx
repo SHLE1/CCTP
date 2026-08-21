@@ -3018,7 +3018,7 @@ function App({ environment }) {
 
       {lookupOpen && (
         <div
-          className="lookup-drawer-layer"
+          className="modal-layer lookup-layer"
           ref={lookupDialogRef}
           role="dialog"
           aria-modal="true"
@@ -3031,7 +3031,7 @@ function App({ environment }) {
             onClick={() => setLookupOpen(false)}
             aria-label="Close rent recovery"
           />
-          <div className="lookup-drawer">
+          <div className="sheet lookup-sheet">
             <LookupTableManager
               environment={environment}
               onClose={() => setLookupOpen(false)}

@@ -1557,32 +1557,6 @@ summary:focus-visible,
 }
 
 /* Lookup Table recovery drawer */
-.lookup-drawer-layer {
-  position: fixed;
-  inset: 0;
-  z-index: 90;
-  display: flex;
-  justify-content: flex-end;
-}
-.lookup-drawer {
-  position: relative;
-  z-index: 1;
-  width: min(560px, 100%);
-  height: 100%;
-  overflow: auto;
-  overscroll-behavior: contain;
-  padding: 18px 16px 40px;
-  background: var(--surface);
-  border-left: 1px solid var(--border);
-  box-shadow: var(--shadow);
-  color: var(--text);
-  animation: lookup-drawer-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-@keyframes lookup-drawer-in {
-  from { transform: translateX(18px); opacity: 0.72; }
-  to { transform: translateX(0); opacity: 1; }
-}
-
 /* Lookup Table recovery */
 .lookup-section {
   width: 100%;
@@ -1594,50 +1568,55 @@ summary:focus-visible,
   justify-content: space-between;
   gap: 14px;
   margin-bottom: 16px;
-  padding: 0 2px;
 }
 .lookup-heading h2 {
-  margin: 2px 0 0;
+  margin: 0;
   color: var(--text);
-  font-size: 1.35rem;
-  line-height: 1.2;
-  letter-spacing: -0.025em;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
 }
 .lookup-heading-sub {
-  margin: 8px 0 0;
-  max-width: 34ch;
+  margin: 2px 0 0;
+  max-width: 36ch;
   color: var(--muted);
-  font-size: 13px;
-  line-height: 1.45;
-  font-weight: 500;
+  font-size: 12px;
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
-.lookup-heading-actions {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  gap: 8px;
+.lookup-close {
+  flex: 0 0 auto;
 }
 .lookup-close:disabled { opacity: 0.4; cursor: not-allowed; }
+.lookup-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin: -4px 0 12px;
+}
 .lookup-wallet {
-  min-height: 36px;
+  min-height: 34px;
   display: inline-flex;
   align-items: center;
   gap: 7px;
   padding: 0 11px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-4xl);
-  background: var(--surface);
+  border: 1px solid var(--btn-secondary-border);
+  border-radius: var(--radius-2xl);
+  background: var(--btn-secondary-bg);
   color: var(--muted);
   font: 650 11px var(--font-mono);
 }
 .lookup-refresh {
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   display: grid;
   place-items: center;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-4xl);
-  background: var(--field);
+  border: 1px solid var(--btn-secondary-border);
+  border-radius: var(--radius-2xl);
+  background: var(--btn-secondary-bg);
   color: var(--text);
   transition: transform 120ms cubic-bezier(0.16, 1, 0.3, 1), opacity 120ms ease;
 }
@@ -2143,6 +2122,12 @@ summary:focus-visible,
   overscroll-behavior: contain;
 }
 .manual-claim-sheet {
+  width: min(520px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.lookup-sheet {
   width: min(520px, 100%);
   max-height: calc(100vh - 32px);
   overflow-y: auto;
@@ -2870,7 +2855,6 @@ summary:focus-visible,
     justify-content: center;
   }
   .explore-trigger svg.explore-chev { display: none; }
-  .lookup-drawer { width: 100%; border-left: 0; padding: 14px 12px 32px; }
   main { justify-content: flex-start; padding-top: 12px; }
   .history-section { margin-top: 26px; }
   .history-heading {
@@ -2907,13 +2891,6 @@ summary:focus-visible,
   .history-table-body { grid-template-columns: 1fr; }
   .history-action,
   .history-action-menu > summary { min-height: 38px; }
-  .lookup-heading { flex-wrap: wrap; }
-  .lookup-heading-actions {
-    margin-left: auto;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-  }
-  .lookup-wallet { min-height: 32px; }
   .lookup-summary strong { font-size: 15px; }
   .lookup-empty.connect { align-items: flex-start; flex-wrap: wrap; }
   .lookup-empty.connect > div { flex: 1; }

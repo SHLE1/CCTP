@@ -185,7 +185,7 @@ Dual-theme palette driven by CSS custom properties on `:root`, `[data-theme='lig
 - App column: topbar (64px) → main (flex start) → footer
 - Primary surface: `.bridge-card` at `min(640px, 100%)` with `22px 22px 20px` padding (`20px 16px` below 560px); the full card (through the trust line) fits a 1280×800 viewport without scrolling
 - Chain row: 3-column grid `1fr 40px 1fr` with 10px gaps (source | swap | destination)
-- Secondary width for history: `min(900px, 100%)`
+- Secondary width for history: `min(900px, 100%)`; recovery utilities (Manual claim, Recover rent) live in the history heading, co-located with the records they act on — the bridge card topline stays title-only
 - Main padding: 24px 16px 56px; gaps 16px
 - Breakpoints observed: `900px`, `560px` (stack/tighten); min body width 320px
 
@@ -224,7 +224,7 @@ Hybrid: flat page background + one ambient card/sheet shadow + tonal field nesti
 
 ### Cards / Containers
 - **Bridge card:** surface + border + 4xl radius + shadow + 22px padding
-- **Sheets:** max ~400px (progress sheet may differ), same surface language
+- **Sheets:** Manual claim and Recover rent use the same centered 520px recovery sheet (shared backdrop, header type, 34px close control, padding, radius, shadow, and scroll contract); progress/confirmation sheets may differ only when their content requires it
 
 ### Inputs / Fields
 - Chain triggers, recipient field, and primary CTA share one 48px control height. Field bg, 2xl radius

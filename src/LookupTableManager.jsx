@@ -324,35 +324,34 @@ export default function LookupTableManager({ environment, onClose }) {
             Deactivate unused Lookup Tables, then close them to reclaim SOL rent.
           </p>
         </div>
-        <div className="lookup-heading-actions">
-          {connected && publicKey && (
-            <>
-              <span className="lookup-wallet"><Wallet size={13} />{shortAddress(publicKey.toBase58())}</span>
-              <button
-                type="button"
-                className="lookup-refresh"
-                onClick={() => loadTables()}
-                disabled={scan.status === 'loading' || busy}
-                aria-label="Refresh Lookup Tables"
-                title="Refresh Lookup Tables"
-              >
-                <RefreshCw className={scan.status === 'loading' ? 'spin' : ''} size={15} />
-              </button>
-            </>
-          )}
-          {onClose && (
-            <button
-              type="button"
-              className="icon-button lookup-close"
-              onClick={requestClose}
-              disabled={busy || Boolean(pendingAction)}
-              aria-label="Close rent recovery"
-            >
-              <X size={18} />
-            </button>
-          )}
-        </div>
+        {onClose && (
+          <button
+            type="button"
+            className="icon-button lookup-close"
+            onClick={requestClose}
+            disabled={busy || Boolean(pendingAction)}
+            aria-label="Close rent recovery"
+          >
+            <X size={18} />
+          </button>
+        )}
       </div>
+
+      {connected && publicKey && (
+        <div className="lookup-toolbar">
+          <span className="lookup-wallet"><Wallet size={13} />{shortAddress(publicKey.toBase58())}</span>
+          <button
+            type="button"
+            className="lookup-refresh"
+            onClick={() => loadTables()}
+            disabled={scan.status === 'loading' || busy}
+            aria-label="Refresh Lookup Tables"
+            title="Refresh Lookup Tables"
+          >
+            <RefreshCw className={scan.status === 'loading' ? 'spin' : ''} size={15} />
+          </button>
+        </div>
+      )}
 
       {notice && (
         <div className={`lookup-notice ${notice.type}`} role={notice.type === 'error' ? 'alert' : 'status'}>
