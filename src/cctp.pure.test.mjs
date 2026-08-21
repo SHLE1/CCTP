@@ -632,8 +632,8 @@ describe('USDC amount helpers', () => {
   })
 
   it('rejects more than 6 decimals', () => {
-    assert.equal(validateAmount('1.1234567'), '金额格式不正确（最多 6 位小数）')
-    assert.equal(validateAmount('0'), '金额必须大于 0')
+    assert.equal(validateAmount('1.1234567'), 'Invalid amount format (up to 6 decimals)')
+    assert.equal(validateAmount('0'), 'Amount must be greater than 0')
     assert.equal(validateAmount('1.25'), '')
   })
 
@@ -809,10 +809,10 @@ describe('mainnet transfer safety invariants', () => {
   it('resolves a single amount field error for aria-describedby', () => {
     assert.equal(resolveAmountFieldError({
       amount: '1',
-      amountError: '金额格式不正确（最多 6 位小数）',
+      amountError: 'Invalid amount format (up to 6 decimals)',
       balanceTooLow: true,
       feeTooHigh: true,
-    }), '金额格式不正确（最多 6 位小数）')
+    }), 'Invalid amount format (up to 6 decimals)')
     assert.equal(resolveAmountFieldError({
       amount: '1',
       amountError: '',
@@ -915,11 +915,11 @@ describe('mainnet transfer safety invariants', () => {
   it('rejects burn-like destination addresses even when their format is valid', () => {
     assert.match(
       validateRecipient('mainnet', 'base', '0x0000000000000000000000000000000000000000'),
-      /零地址/,
+      /zero address/,
     )
     assert.match(
       validateRecipient('mainnet', 'solana', '11111111111111111111111111111111'),
-      /默认地址/,
+      /system program/,
     )
   })
 

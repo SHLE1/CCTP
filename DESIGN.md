@@ -11,8 +11,8 @@ colors:
   field-light: "#ffffff"
   field-soft-light: "#f3f4fb"
   text-body-light: "#664e4d"
-  muted-light: "#7a6e6d"
-  faint-light: "#a39a99"
+  muted-light: "#6e6362"
+  faint-light: "#736a69"
   border-light: "#dbdeec"
   border-strong-light: "#c8ccd9"
   pill-bg-light: "#dce6f8"
@@ -24,7 +24,7 @@ colors:
   dark-text-body: "#c8c0bf"
   danger-light: "#c2410c"
   danger-dark: "#f87171"
-  green-light: "#059669"
+  green-light: "#05684f"
   green-dark: "#34d399"
   warn-light: "#92400e"
   warn-dark: "#fbbf24"
@@ -68,6 +68,7 @@ typography:
     fontSize: "13px"
     fontWeight: 500
 rounded:
+  mark: "6px"
   lg: "0.5rem"
   xl: "0.75rem"
   2xl: "0.625rem"
@@ -95,14 +96,14 @@ components:
   button-ghost:
     backgroundColor: "{colors.field-light}"
     textColor: "{colors.primary}"
-    rounded: "{rounded.pill}"
+    rounded: "{rounded.2xl}"
     padding: "0 14px"
     height: "34px"
   card-bridge:
     backgroundColor: "{colors.surface-light}"
     textColor: "{colors.primary}"
     rounded: "{rounded.4xl}"
-    padding: "32px 32px 38px"
+    padding: "22px 22px 20px"
   field-input:
     backgroundColor: "{colors.field-light}"
     textColor: "{colors.primary}"
@@ -145,7 +146,7 @@ Dual-theme palette driven by CSS custom properties on `:root`, `[data-theme='lig
 
 ### Neutral
 - **Cool Paper** (`#f8f9ff` bg, `#eeeff7` surface, `#ffffff` fields): Light page and card stack.
-- **Warm Charcoal body** (`#664e4d` text-body, `#7a6e6d` muted, `#a39a99` faint): Secondary copy on light.
+- **Warm Charcoal body** (`#664e4d` text-body, `#6e6362` muted, `#736a69` faint; ≥4.5:1 on all light surfaces): Secondary copy on light. Muted carries real guidance text; faint is reserved for placeholders, decorative icons, and disabled text.
 - **Border Mist** (`#dbdeec`, strong `#c8ccd9`): Light control borders.
 - **Near Black** (`#0d0200` bg, `#110807` surface): Dark page and panels.
 - **Ash body** (`#c8c0bf` body, `#9a8f8e` muted): Dark secondary text.
@@ -153,11 +154,13 @@ Dual-theme palette driven by CSS custom properties on `:root`, `[data-theme='lig
 ### Semantic
 - **Danger** light `#c2410c` / dark `#f87171` with danger-bg panels
 - **Warn** light `#92400e` / dark `#fbbf24` for mainnet and quote warnings
-- **Success green** light `#059669` / dark `#34d399`
+- **Success green** light `#05684f` / dark `#34d399`
 
 **The Token Surface Rule.** Prefer semantic vars (`--btn`, `--text`, `--border`, `--danger`) over raw hex in components so light/dark stay coherent.
 
 **The One Accent Rule.** In light mode the action accent is violet/blue; in dark mode amber carries primary CTA and strong borders. Do not introduce a third accent family without updating tokens.
+
+**The Chain Brand Exception.** The `color` entries in `src/main.jsx`'s `CHAIN_META` (e.g. Ethereum `#627EEA`, OP `#FF0420`, Solana `#9945FF`) are third-party chain brand marks, registered here as deliberate exceptions to the token palette. They exist to identify chains—paired with text labels, never as theme accents—and do not need token promotion.
 
 ## Typography
 
@@ -180,9 +183,9 @@ Dual-theme palette driven by CSS custom properties on `:root`, `[data-theme='lig
 ## Layout
 
 - App column: topbar (64px) → main (flex start) → footer
-- Primary surface: `.bridge-card` at `min(860px, 100%)` with `24px 32px 28px` padding; the full card (through the trust line) fits a 1280×800 viewport without scrolling
-- Chain row: 3-column grid `1fr 44px 1fr` (source | swap | destination)
-- Secondary width for history: `min(900px, 100%)`
+- Primary surface: `.bridge-card` at `min(640px, 100%)` with `22px 22px 20px` padding (`20px 16px` below 560px); the full card (through the trust line) fits a 1280×800 viewport without scrolling
+- Chain row: 3-column grid `1fr 40px 1fr` with 10px gaps (source | swap | destination)
+- Secondary width for history: `min(900px, 100%)`; recovery utilities (Manual claim, Recover rent) live in the history heading, co-located with the records they act on — the bridge card topline stays title-only
 - Main padding: 24px 16px 56px; gaps 16px
 - Breakpoints observed: `900px`, `560px` (stack/tighten); min body width 320px
 
@@ -201,8 +204,10 @@ Hybrid: flat page background + one ambient card/sheet shadow + tonal field nesti
 
 ## Shapes
 
-- Compact geometry: card/sheet `0.75rem` (`--radius-4xl`)
-- Controls and fields: `0.625rem` (`--radius-2xl`)
+- Compact geometry: card/sheet `0.75rem` (`--radius-4xl`, 12px); page-level panels, dropdowns, and standalone banners share it
+- Controls and fields: `0.625rem` (`--radius-2xl`, 10px); notice boxes nested inside a card or sheet step down to this tier
+- Nested sub-controls (menu items, in-field actions): `0.5rem` (`--radius-lg`, 8px)
+- Square brand/chain marks: 6px micro radius; circles use `50%`, status badges and pills use `999px`
 - Pills/toggles: full pill (`999px`)
 - Chain/USDC marks: circular; wallet marks ~10px radius squares
 - Borders: 1px semantic `--border`, strong on hover/focus
@@ -211,14 +216,15 @@ Hybrid: flat page background + one ambient card/sheet shadow + tonal field nesti
 
 ### Buttons
 - **Primary:** full-width 48px, radius 2xl, `--btn` / `--btn-text`, weight 700; disabled keeps full opacity with a muted fill (`--btn` 12% on `--field`) + `--muted` text + 1px border
-- **Ghost / secondary:** 34px height, radius 2xl, secondary border/bg tokens
-- **Icon button:** 34×34, radius 10px, field background
+- **Ghost / secondary:** 34px height, padding 0 14px, radius 2xl, secondary border/bg tokens. Every framed secondary action shares this spec (Recover rent, Resume, Manual claim, sheet close, menu triggers); pill radius is reserved for toggles and status badges, never for action buttons
+- **Icon button:** 34×34, radius 2xl, secondary border/bg tokens
+- **Borderless micro-actions** (MAX, quote refresh, use-wallet, Change ›): no frame, 12px/600, 28px min target, radius lg; they act on the adjacent value, not on the flow
 - **Topbar nav item:** 36px hit height, radius 2xl, borderless, `--muted` text → hover/open `--field-soft` + `--text`; Recover rent, Docs, and the Explore trigger share it
 - **Theme toggle:** 40×40 icon-only, radius 2xl, `--theme-btn-*` bg/border — the sole framed control in the topbar
 
 ### Cards / Containers
-- **Bridge card:** surface + border + 4xl radius + shadow + 28px padding
-- **Sheets:** max ~400px (progress sheet may differ), same surface language
+- **Bridge card:** surface + border + 4xl radius + shadow + 22px padding
+- **Sheets:** Manual claim and Recover rent use the same centered 520px recovery sheet (shared backdrop, header type, 34px close control, padding, radius, shadow, and scroll contract); progress/confirmation sheets may differ only when their content requires it
 
 ### Inputs / Fields
 - Chain triggers, recipient field, and primary CTA share one 48px control height. Field bg, 2xl radius

@@ -1,0 +1,126 @@
+{
+  "detector": {
+    "ignoreValues": [
+      {
+        "rule": "design-system-color",
+        "value": "#627EEA",
+        "reason": "Ethereum chain brand mark (CHAIN_META) \u2014 third-party brand color, documented in DESIGN.md as the Chain Brand Exception."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#28A0F0",
+        "reason": "Arbitrum chain brand mark (CHAIN_META) \u2014 third-party brand color, documented in DESIGN.md as the Chain Brand Exception."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#E84142",
+        "reason": "Avalanche chain brand mark (CHAIN_META) \u2014 third-party brand color, documented in DESIGN.md as the Chain Brand Exception."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#0052FF",
+        "reason": "Base chain brand mark (CHAIN_META) \u2014 third-party brand color, documented in DESIGN.md as the Chain Brand Exception."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#20242C",
+        "reason": "Codex chain brand mark (CHAIN_META) \u2014 third-party brand color, documented in DESIGN.md as the Chain Brand Exception."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#002D74",
+        "reason": "Cronos chain brand mark (CHAIN_META) \u2014 third-party brand color, documented in DESIGN.md as the Chain Brand Exception."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#16181D",
+        "reason": "EDGE chain brand mark (CHAIN_META) \u2014 third-party brand color, documented in DESIGN.md as the Chain Brand Exception."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#2C7468",
+        "reason": "HyperEVM chain brand mark (CHAIN_META) \u2014 third-party brand color, documented in DESIGN.md as the Chain Brand Exception."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#0082C9",
+        "reason": "Injective chain brand mark (CHAIN_META) \u2014 third-party brand color, documented in DESIGN.md as the Chain Brand Exception."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#7132F5",
+        "reason": "Ink chain brand mark (CHAIN_META) \u2014 third-party brand color, documented in DESIGN.md as the Chain Brand Exception."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#1F9DC0",
+        "reason": "Linea chain brand mark (CHAIN_META) \u2014 third-party brand color, documented in DESIGN.md as the Chain Brand Exception."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#836EF9",
+        "reason": "Monad chain brand mark (CHAIN_META) \u2014 third-party brand color, documented in DESIGN.md as the Chain Brand Exception."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#168CA8",
+        "reason": "Morph chain brand mark (CHAIN_META) \u2014 third-party brand color, documented in DESIGN.md as the Chain Brand Exception."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#FF0420",
+        "reason": "OP Mainnet chain brand mark (CHAIN_META) \u2014 third-party brand color, documented in DESIGN.md as the Chain Brand Exception."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#D97706",
+        "reason": "Pharos chain brand mark (CHAIN_META) \u2014 third-party brand color, documented in DESIGN.md as the Chain Brand Exception."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#EA580C",
+        "reason": "Plume chain brand mark (CHAIN_META) \u2014 third-party brand color, documented in DESIGN.md as the Chain Brand Exception."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#8247E5",
+        "reason": "Polygon chain brand mark (CHAIN_META) \u2014 third-party brand color, documented in DESIGN.md as the Chain Brand Exception."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#9B1C31",
+        "reason": "Sei chain brand mark (CHAIN_META) \u2014 third-party brand color, documented in DESIGN.md as the Chain Brand Exception."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#9945FF",
+        "reason": "Solana chain brand mark (CHAIN_META) \u2014 third-party brand color, documented in DESIGN.md as the Chain Brand Exception."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#2563EB",
+        "reason": "Sonic chain brand mark (CHAIN_META) \u2014 third-party brand color, documented in DESIGN.md as the Chain Brand Exception."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#FF2D8D",
+        "reason": "Unichain chain brand mark (CHAIN_META) \u2014 third-party brand color, documented in DESIGN.md as the Chain Brand Exception."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#111111",
+        "reason": "World Chain / X Layer chain brand mark (CHAIN_META) \u2014 third-party brand color, documented in DESIGN.md as the Chain Brand Exception."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#0D97D5",
+        "reason": "XDC chain brand mark (CHAIN_META) \u2014 third-party brand color, documented in DESIGN.md as the Chain Brand Exception."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(0, 0, 0, 0.15)",
+        "reason": "Fast-toggle knob contact shadow; a shadow, not a palette color."
+      }
+    ]
+  }
+}

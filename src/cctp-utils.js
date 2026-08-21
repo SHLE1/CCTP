@@ -47,12 +47,12 @@ export function sanitizeAmountInput(raw) {
 
 export function validateAmount(amount) {
   const text = String(amount ?? '').trim()
-  if (!text) return '请输入转账金额'
-  if (!/^\d+(\.\d{1,6})?$/.test(text)) return '金额格式不正确（最多 6 位小数）'
+  if (!text) return 'Enter a transfer amount'
+  if (!/^\d+(\.\d{1,6})?$/.test(text)) return 'Invalid amount format (up to 6 decimals)'
   try {
-    if (parseUsdcToMicro(text) <= 0n) return '金额必须大于 0'
+    if (parseUsdcToMicro(text) <= 0n) return 'Amount must be greater than 0'
   } catch {
-    return '金额格式不正确（最多 6 位小数）'
+    return 'Invalid amount format (up to 6 decimals)'
   }
   return ''
 }
