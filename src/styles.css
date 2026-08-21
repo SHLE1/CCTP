@@ -419,15 +419,6 @@ main {
   font-weight: 400;
 }
 
-.card-actions .ghost-btn { flex-shrink: 0; }
-
-.card-actions {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
 .resume-hint {
   margin: 0;
   padding: 10px 12px;
@@ -1081,31 +1072,32 @@ summary:focus-visible,
 .fast-toggle button:disabled { cursor: not-allowed; }
 .delivery-facts {
   display: flex;
-  align-items: center;
-  gap: 14px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 3px 8px;
   margin-left: auto;
   color: var(--text);
   font-size: 12px;
   font-weight: 600;
 }
 .delivery-facts > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.delivery-facts > span + span::before {
+  content: "·";
+  margin-right: 8px;
+  color: var(--faint);
+  font-weight: 400;
 }
 .delivery-facts small {
   color: var(--muted);
   font-size: inherit;
   font-weight: 500;
 }
-.delivery-facts .protocol-badge {
-  margin-left: 8px;
-  border-left: 0;
-  border-radius: var(--radius-2xl);
-  background: var(--pill-bg);
-  color: var(--pill-fg);
-  padding: 0 11px;
+.delivery-facts .protocol {
+  color: var(--muted);
+  font-weight: 500;
 }
 .quote-breakdown {
   display: flex;
@@ -2819,7 +2811,6 @@ summary:focus-visible,
   main { padding: 52px 12px 32px; }
   .bridge-card { padding: 20px 16px; }
   .card-topline { gap: 12px; margin-bottom: 22px; }
-  .card-actions { flex-direction: row; align-items: center; justify-content: space-between; }
   .card-title h1 { font-size: 1.1rem; }
   .card-sub { max-width: none; }
   .bridge-icon {
@@ -2869,15 +2860,7 @@ summary:focus-visible,
   .delivery-facts {
     width: 100%;
     margin-left: 0;
-    justify-content: space-between;
   }
-  .delivery-facts > span {
-    flex: 1;
-    justify-content: center;
-    padding: 0 8px;
-  }
-  .delivery-facts > span:first-child { border-left: 0; }
-  .delivery-facts .protocol-badge { margin-left: 0; flex: 0 0 auto; }
   .topbar { padding: 0 12px; }
   .topbar-nav-label { display: inline; }
   button.topbar-nav {

@@ -1207,7 +1207,7 @@ function ProgressModal({
   )
 }
 
-function BridgeCard({ environment, chains, resumeRequest = 0, onManualClaim }) {
+function BridgeCard({ environment, chains, resumeRequest = 0 }) {
   const solanaWalletState = useWallet()
   const [sourceId, setSourceId] = useState('base')
   // Default to a corridor this build can actually serve: Solana needs a private RPC.
@@ -2102,11 +2102,6 @@ function BridgeCard({ environment, chains, resumeRequest = 0, onManualClaim }) {
             <p className="card-sub">Native USDC. No interface fee.</p>
           </div>
         </div>
-        {onManualClaim && (
-          <button type="button" className="ghost-btn" onClick={onManualClaim}>
-            Manual claim
-          </button>
-        )}
       </div>
 
       {resumeHint && (
@@ -2342,7 +2337,7 @@ function BridgeCard({ environment, chains, resumeRequest = 0, onManualClaim }) {
             <span><small>Orbit</small> {feeBreakdown.forwarder}</span>
           )}
           {receive != null && <span><small>Receive</small> {receive}</span>}
-          <span className="protocol-badge">CCTP v2</span>
+          <span className="protocol">CCTP v2</span>
         </div>
       </div>
 
@@ -2602,6 +2597,11 @@ function TransferHistory({ environment, chains, onResume, onManualClaim, onRecov
 
   const historyTools = (
     <div className="history-tools">
+      {onManualClaim && (
+        <button type="button" className="ghost-btn" onClick={onManualClaim}>
+          Manual claim
+        </button>
+      )}
       <button type="button" className="ghost-btn" onClick={onRecoverRent}>
         Recover rent
       </button>
@@ -2969,10 +2969,6 @@ function App({ environment }) {
           environment={environment}
           chains={chains}
           resumeRequest={resumeRequest}
-          onManualClaim={() => {
-            setLookupOpen(false)
-            setManualClaimOpen(true)
-          }}
         />
 
         <TransferHistory
