@@ -96,7 +96,7 @@ components:
   button-ghost:
     backgroundColor: "{colors.field-light}"
     textColor: "{colors.primary}"
-    rounded: "{rounded.pill}"
+    rounded: "{rounded.2xl}"
     padding: "0 14px"
     height: "34px"
   card-bridge:
@@ -216,8 +216,9 @@ Hybrid: flat page background + one ambient card/sheet shadow + tonal field nesti
 
 ### Buttons
 - **Primary:** full-width 48px, radius 2xl, `--btn` / `--btn-text`, weight 700; disabled keeps full opacity with a muted fill (`--btn` 12% on `--field`) + `--muted` text + 1px border
-- **Ghost / secondary:** 34px height, radius 2xl, secondary border/bg tokens
-- **Icon button:** 34×34, radius 10px, field background
+- **Ghost / secondary:** 34px height, padding 0 14px, radius 2xl, secondary border/bg tokens. Every framed secondary action shares this spec (Recover rent, Resume, Manual claim, sheet close, menu triggers); pill radius is reserved for toggles and status badges, never for action buttons
+- **Icon button:** 34×34, radius 2xl, secondary border/bg tokens
+- **Borderless micro-actions** (MAX, quote refresh, use-wallet, Change ›): no frame, 12px/600, 28px min target, radius lg; they act on the adjacent value, not on the flow
 - **Topbar nav item:** 36px hit height, radius 2xl, borderless, `--muted` text → hover/open `--field-soft` + `--text`; Recover rent, Docs, and the Explore trigger share it
 - **Theme toggle:** 40×40 icon-only, radius 2xl, `--theme-btn-*` bg/border — the sole framed control in the topbar
 

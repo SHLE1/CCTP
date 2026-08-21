@@ -419,18 +419,7 @@ main {
   font-weight: 400;
 }
 
-.card-pill {
-  flex-shrink: 0;
-  min-height: 32px;
-  padding: 0 12px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--field);
-  color: var(--text-body);
-  font-size: 12px;
-  font-weight: 600;
-}
-.card-pill:hover { border-color: var(--border-strong); color: var(--text); }
+.card-actions .ghost-btn { flex-shrink: 0; }
 
 .card-actions {
   display: flex;
@@ -450,7 +439,7 @@ main {
   line-height: 1.4;
 }
 .ghost-btn {
-  min-height: 40px;
+  min-height: 34px;
   height: auto;
   padding: 0 14px;
   border-radius: var(--radius-2xl);
@@ -663,7 +652,7 @@ main {
   background: transparent;
   color: var(--pill-fg);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   padding: 4px 6px;
   min-height: 28px;
   cursor: pointer;
@@ -761,7 +750,7 @@ main {
   background: transparent;
   color: var(--pill-fg);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   padding: 4px 6px;
   min-height: 28px;
   border-radius: var(--radius-lg);
@@ -970,8 +959,8 @@ summary:focus-visible,
   color: var(--pill-fg);
   font-size: 12px;
   font-weight: 600;
-  padding: 6px 8px;
-  min-height: 32px;
+  padding: 4px 6px;
+  min-height: 28px;
   border-radius: var(--radius-lg);
 }
 .use-wallet:hover { text-decoration: underline; }
@@ -2214,11 +2203,11 @@ summary:focus-visible,
   color: var(--text);
 }
 .icon-button {
-  width: 40px;
-  height: 40px;
+  width: 34px;
+  height: 34px;
   border-radius: var(--radius-2xl);
-  border: 1px solid var(--border);
-  background: var(--field);
+  border: 1px solid var(--btn-secondary-border);
+  background: var(--btn-secondary-bg);
   display: grid;
   place-items: center;
   color: var(--muted);

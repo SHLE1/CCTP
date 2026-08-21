@@ -2103,7 +2103,7 @@ function BridgeCard({ environment, chains, resumeRequest = 0, onManualClaim }) {
           </div>
         </div>
         {onManualClaim && (
-          <button type="button" className="card-pill" onClick={onManualClaim}>
+          <button type="button" className="ghost-btn" onClick={onManualClaim}>
             Manual claim
           </button>
         )}
