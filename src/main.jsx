@@ -77,6 +77,8 @@ import {
   validateRecipient,
   validateTransferEstimate,
 } from './cctp'
+import '@fontsource-variable/inter'
+import '@fontsource-variable/space-grotesk'
 import '@solana/wallet-adapter-react-ui/styles.css'
 import LookupTableManager from './LookupTableManager.jsx'
 import './styles.css'

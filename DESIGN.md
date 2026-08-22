@@ -30,42 +30,88 @@ colors:
   warn-dark: "#fbbf24"
 typography:
   display:
-    fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+    fontFamily: "'Space Grotesk Variable', 'Inter Variable', ui-sans-serif, system-ui, sans-serif"
     fontSize: "2.75rem"
     fontWeight: 600
     lineHeight: 1.1
     letterSpacing: "-0.03em"
+  display-mobile:
+    fontFamily: "'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif"
+    fontSize: "34px"
+    fontWeight: 600
+    lineHeight: 1.1
+    letterSpacing: "-0.03em"
   card-title:
-    fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+    fontFamily: "'Space Grotesk Variable', 'Inter Variable', ui-sans-serif, system-ui, sans-serif"
+    fontSize: "1.4375rem"
+    fontWeight: 600
+    lineHeight: 1.15
+    letterSpacing: "-0.025em"
+  card-title-mobile:
+    fontFamily: "'Space Grotesk Variable', 'Inter Variable', ui-sans-serif, system-ui, sans-serif"
+    fontSize: "19px"
+    fontWeight: 600
+    lineHeight: 1.15
+    letterSpacing: "-0.025em"
+  headline:
+    fontFamily: "'Space Grotesk Variable', 'Inter Variable', ui-sans-serif, system-ui, sans-serif"
     fontSize: "1.25rem"
     fontWeight: 600
     lineHeight: 1.2
     letterSpacing: "-0.02em"
-  headline:
-    fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-    fontSize: "1.35rem"
-    fontWeight: 700
-    lineHeight: 1.2
-    letterSpacing: "-0.025em"
   title:
-    fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-    fontSize: "17px"
-    fontWeight: 700
-    lineHeight: 1.25
+    fontFamily: "'Space Grotesk Variable', 'Inter Variable', ui-sans-serif, system-ui, sans-serif"
+    fontSize: "20px"
+    fontWeight: 600
+    lineHeight: 1.2
     letterSpacing: "-0.02em"
+  cta:
+    fontFamily: "'Space Grotesk Variable', 'Inter Variable', ui-sans-serif, system-ui, sans-serif"
+    fontSize: "17px"
+    fontWeight: 600
+    lineHeight: 1.2
+    letterSpacing: "-0.01em"
+  brand:
+    fontFamily: "'Space Grotesk Variable', 'Inter Variable', ui-sans-serif, system-ui, sans-serif"
+    fontSize: "16px"
+    fontWeight: 700
+    lineHeight: 1
+    letterSpacing: "-0.02em"
+  control:
+    fontFamily: "'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif"
+    fontSize: "15px"
+    fontWeight: 600
+    lineHeight: 1.3
   body:
-    fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-    fontSize: "0.9rem"
+    fontFamily: "'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif"
+    fontSize: "14px"
     fontWeight: 400
-    lineHeight: 1.45
+    lineHeight: 1.5
   label:
-    fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+    fontFamily: "'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif"
     fontSize: "13px"
     fontWeight: 600
     lineHeight: 1.3
+  caption:
+    fontFamily: "'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif"
+    fontSize: "13px"
+    fontWeight: 400
+    lineHeight: 1.5
+  meta:
+    fontFamily: "'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif"
+    fontSize: "12px"
+    fontWeight: 500
+    lineHeight: 1.4
+  overline:
+    fontFamily: "'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif"
+    fontSize: "11px"
+    fontWeight: 700
+    lineHeight: 1.3
+    letterSpacing: "0.06em"
+    textTransform: "uppercase"
   mono:
     fontFamily: "ui-monospace, 'SF Mono', Menlo, Consolas, monospace"
-    fontSize: "13px"
+    fontSize: "12px"
     fontWeight: 500
 rounded:
   mark: "6px"
@@ -123,7 +169,7 @@ components:
 
 **Creative North Star: "The Mainnet Console"**
 
-CCTP One’s UI is a task-first bridge console: a single card centered on cool paper, with system sans type, monospaced addresses, and chain marks. Light mode is lavender-tinted paper and violet ink; dark mode is near-black with a warm amber accent for primary actions and borders. Expression lives in status clarity, honest mainnet warnings, and progressive disclosure—not in marketing illustration.
+CCTP One’s UI is a task-first bridge console: a single card centered on cool paper, with Space Grotesk display type over an Inter UI body, monospaced addresses, and chain marks. Light mode is lavender-tinted paper and violet ink; dark mode is near-black with a warm amber accent for primary actions and borders. Expression lives in status clarity, honest mainnet warnings, and progressive disclosure—not in marketing illustration.
 
 Depth is light and structural: one soft card shadow, tonal fields inside the card, and modal sheets. Motion is short (scale on press, spin on load, toggle knob travel) and respects `prefers-reduced-motion`.
 
@@ -133,7 +179,7 @@ Depth is light and structural: one soft card shadow, tonal fields inside the car
 - Two-tier radii: 0.75rem (`--radius-4xl`) for the bridge card and sheets, 0.625rem (`--radius-2xl`) for controls; full-pill radius is reserved for true circles and status badges
 - Centered operate layout: primary task is the bridge card; transfer history follows
 - Token-driven CSS variables in `src/styles.css` (`--bg`, `--surface`, `--btn`, semantic danger/warn/green)
-- System UI font stack; mono for addresses and amounts context
+- Space Grotesk display + Inter UI body, self-hosted variable fonts; mono for addresses and amounts context
 
 ## Colors
 
@@ -164,21 +210,28 @@ Dual-theme palette driven by CSS custom properties on `:root`, `[data-theme='lig
 
 ## Typography
 
-**Display / UI Font:** System UI sans (`--font-sans`)
+**Display Font:** Space Grotesk Variable (`--font-display`) — brand wordmark, card `h1`, section `h2`, sheet `h3`, primary CTA
+**UI / Body Font:** Inter Variable (`--font-sans`) — everything else
 **Mono Font:** UI monospace (`--font-mono`) for addresses, codes, and compact counts
 
-**Character:** Dense operator UI: tight letter-spacing on titles, medium weight on amounts, no display serif or custom webfonts.
+Both faces are self-hosted variable fonts (`@fontsource-variable/*`), loaded with `font-display: swap`; system stacks remain the fallback. Antialiasing is set globally; `font-synthesis: none` prevents faux weights.
+
+**Character:** Confident operator console: Space Grotesk gives headings and the CTA a geometric voice; Inter carries data and prose at readable sizes. Tight negative tracking on display roles, plain tracking on body, wide positive tracking reserved for uppercase overlines.
 
 ### Hierarchy
-- **Display** (600, 2.75rem, tracking -0.03em, tabular-nums): Amount input hero — money is the loudest object
-- **Headline** (700, ~1.35rem): History section titles
-- **Title** (700, 17px): Sheet/modal headings
-- **Body** (400, ~0.9rem, lh 1.45): Subtitles and helper copy
-- **Label** (600, 13px): Field labels, pill text scale
-- **Card title** (600, 1.25rem, tracking -0.02em): Bridge card `h1`, demoted below the amount
-- **Mono** (13px+): Recipient fields, connected address, `code` in banners
+- **Display** (Inter 600, 2.75rem, tabular-nums): Amount input hero — money is the loudest object (2.125rem below 560px)
+- **Card title** (Space Grotesk 600, 1.4375rem, tracking -0.025em): Bridge card `h1`
+- **Headline** (Space Grotesk 600, 1.25rem): Section headings (history)
+- **Title** (Space Grotesk 600, 20px): Sheet/modal headings, lookup heading
+- **Body** (Inter 400, 14–15px, lh 1.5): Subtitles, helper copy, banners
+- **Label** (Inter 600, 13px): Field labels, buttons, pills
+- **Caption/meta** (Inter 400–500, 12–13px): Timestamps, mono details, muted notes
+- **Overline** (Inter 700, 11px, +0.06em, uppercase): Micro section labels, badges
+- **Mono** (12px floor): Recipient fields, connected address, `code` in banners
 
-**The System Stack Rule.** Stay on platform fonts; do not add marketing webfonts that change layout shift or CSP font sources without intent.
+**Weight discipline:** 400 for prose, 500 for emphasized data, 600 for labels/controls, 700 only inside uppercase overlines and badges. Never use weight alone to fake hierarchy.
+
+**The Two-Family Rule.** Space Grotesk is reserved for named display roles above; Inter covers all UI, data, and prose. Do not add further families without updating this document.
 
 ## Layout
 
